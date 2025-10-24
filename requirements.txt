@@ -1,5 +1,23 @@
+# Core data processing
 pandas>=2.0.0
+numpy>=1.24.0
+
+# Network analysis
+networkx>=3.0
+
+# Web application
+streamlit>=1.28.0
+streamlit-folium>=0.13.0
+folium>=0.14.0
+
+# Data visualization
+matplotlib>=3.7.0
+plotly>=5.0.0
+
+# Data sources
 requests>=2.31.0
+
+# Development (optional)
 notebook>=7.0.0
 ipykernel>=6.29.0
 

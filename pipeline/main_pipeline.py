@@ -12,6 +12,7 @@ try:
     from .cleaner_airports import AirportsCleaner, clean_airports
     from .cleaner_airlines import AirlinesCleaner, clean_airlines
     from .cleaner_routes import RoutesCleaner, clean_routes
+    from .utils_distance import calculate_route_distances
 except ImportError:  # Fallback when executed as a script: python pipeline/main_pipeline.py
     # Ensure project root is on sys.path so absolute package import works
     _ROOT = Path(__file__).resolve().parent.parent
@@ -21,13 +22,14 @@ except ImportError:  # Fallback when executed as a script: python pipeline/main_
     from pipeline.cleaner_airports import AirportsCleaner, clean_airports
     from pipeline.cleaner_airlines import AirlinesCleaner, clean_airlines
     from pipeline.cleaner_routes import RoutesCleaner, clean_routes
+    from pipeline.utils_distance import calculate_route_distances
 
 
 class FlightRoutePipeline:
     def __init__(self, base_dir: str | Path = ".", prefer_local: bool = True) -> None:
         self.base_path = Path(base_dir)
         self.prefer_local = prefer_local
-        self.cleaned_dir = self.base_path / "cleaned_dataset"
+        self.cleaned_dir = self.base_path / "data" / "cleaned"
         self.cleaned_dir.mkdir(parents=True, exist_ok=True)
 
         self.loader = OpenFlightsLoader(base_dir=self.base_path, prefer_local=self.prefer_local)
@@ -44,11 +46,9 @@ class FlightRoutePipeline:
             routes_df, airlines_cleaned=airlines_cleaned, airports_cleaned=airports_cleaned
         )
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        airports_cleaned.to_csv(self.cleaned_dir / f"airports_cleaned_pipeline.csv", index=False, encoding="utf-8")
-        airlines_cleaned.to_csv(self.cleaned_dir / f"airlines_cleaned_pipeline.csv", index=False, encoding="utf-8")
-        routes_cleaned.to_csv(self.cleaned_dir / f"routes_cleaned_pipeline.csv", index=False, encoding="utf-8")
+        # Note: Data cleaning is handled by notebook
+        # This pipeline is only for running the Streamlit application
+        print("Data cleaning is handled by notebook. This pipeline is for Streamlit app only.")
 
         return {
             "airports_cleaned": airports_cleaned,
@@ -62,12 +62,9 @@ def run_pipeline(base_dir: str | Path = ".", prefer_local: bool = True) -> dict[
 
 
 if __name__ == "__main__":
-    frames = run_pipeline()
-    print("- airports_cleaned_pipeline*.csv")
-    print("- airlines_cleaned_pipeline*.csv")
-    print("- routes_cleaned_pipeline*.csv")
-    print(f"Airports: {len(frames['airports_cleaned'])} rows")
-    print(f"Airlines: {len(frames['airlines_cleaned'])} rows")
-    print(f"Routes: {len(frames['routes_cleaned'])} rows")
+    print("=== PIPELINE FOR STREAMLIT APP ONLY ===")
+    print("Data cleaning is handled by notebook.")
+    print("This pipeline is only for running the Streamlit application.")
+    print("Please run the notebook first to generate cleaned data.")
 
 
