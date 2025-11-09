@@ -210,23 +210,6 @@ python -m pipeline.main_pipeline --verbose
 - [ ] Machine learning route optimization
 - [ ] Environmental impact analysis
 
-## 📄 Report Generation
-
-Use `report_template.md` as a template for comprehensive analysis reports. The template includes:
-- Executive summary
-- Network structure analysis
-- Hub rankings and insights
-- What-if analysis results
-- Recommendations and conclusions
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests: `python test_app.py`
-5. Submit a pull request
-
 ## 📝 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
