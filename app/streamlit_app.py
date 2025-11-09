@@ -71,6 +71,83 @@ def load_data():
         return None
 
 
+def search_airports(airports_df, search_term: str, limit: int = 20):
+    """Search airports by IATA, name, city, or country"""
+    if not search_term:
+        return []
+    
+    search_term = search_term.upper()
+    results = []
+    
+    for _, airport in airports_df.iterrows():
+        if pd.isna(airport.get('iata')):
+            continue
+            
+        iata = str(airport.get('iata', '')).upper()
+        name = str(airport.get('name', '')).upper()
+        city = str(airport.get('city', '')).upper()
+        country = str(airport.get('country', '')).upper()
+        
+        if (search_term in iata or 
+            search_term in name or 
+            search_term in city or 
+            search_term in country):
+            results.append({
+                'iata': airport.get('iata', ''),
+                'name': airport.get('name', ''),
+                'city': airport.get('city', ''),
+                'country': airport.get('country', ''),
+                'display': f"{airport.get('iata', '')} - {airport.get('name', '')} ({airport.get('city', '')}, {airport.get('country', '')})"
+            })
+            if len(results) >= limit:
+                break
+    
+    return results
+
+
+def get_airport_info(airports_df, iata: str):
+    """Get airport information by IATA code"""
+    airport = airports_df[airports_df['iata'] == iata]
+    if not airport.empty:
+        return {
+            'iata': airport.iloc[0].get('iata', ''),
+            'name': airport.iloc[0].get('name', ''),
+            'city': airport.iloc[0].get('city', ''),
+            'country': airport.iloc[0].get('country', ''),
+            'latitude': airport.iloc[0].get('latitude', 0),
+            'longitude': airport.iloc[0].get('longitude', 0)
+        }
+    return None
+
+
+def get_popular_routes():
+    """Get list of popular routes for quick access"""
+    return [
+        {"from": "SGN", "to": "LHR", "label": "Ho Chi Minh → London"},
+        {"from": "SGN", "to": "JFK", "label": "Ho Chi Minh → New York"},
+        {"from": "HAN", "to": "NRT", "label": "Hanoi → Tokyo"},
+        {"from": "SGN", "to": "DXB", "label": "Ho Chi Minh → Dubai"},
+        {"from": "BKK", "to": "LHR", "label": "Bangkok → London"},
+        {"from": "SIN", "to": "JFK", "label": "Singapore → New York"},
+        {"from": "NRT", "to": "LAX", "label": "Tokyo → Los Angeles"},
+        {"from": "CDG", "to": "JFK", "label": "Paris → New York"},
+    ]
+
+
+def get_connected_airports_count(analyzer, iata: str):
+    """Get number of airports connected to a given airport"""
+    try:
+        airport_id = analyzer._get_airport_id_by_iata(iata)
+        if airport_id and analyzer.graph:
+            if airport_id in analyzer.graph.nodes():
+                out_degree = analyzer.graph.out_degree(airport_id)
+                in_degree = analyzer.graph.in_degree(airport_id)
+                return out_degree + in_degree
+    except:
+        pass
+    return 0
+
+
 def create_airport_map(coordinates: List[Tuple[float, float, str]], 
                       route_coordinates: List[Tuple[float, float]] = None,
                       center_lat: float = None, 
@@ -128,8 +205,26 @@ def create_airport_map(coordinates: List[Tuple[float, float, str]],
 def display_shortest_path_result(result: Dict[str, Any], analyzer: FlightGraphAnalyzer):
     """Display shortest path analysis results"""
     if "error" in result:
-        st.error(f"❌ {result['error']}")
+        error_msg = result['error']
+        st.error(f"❌ {error_msg}")
+        
+        # Provide helpful suggestions
+        if "No path found" in error_msg:
+            st.warning("💡 **Suggestions:**")
+            st.markdown("""
+            - Try selecting airports with more connections (major hubs)
+            - Check if both airports are in the network
+            - Some airports may not have direct or connecting routes
+            """)
+            
+            # Suggest nearby hubs
+            if 'source' in result or 'destination' in result:
+                st.info("💡 **Tip:** Try using major hubs as transfer points. Go to 'Hub Analysis' to see top airports with most connections.")
+        
         return
+    
+    # Success message
+    st.success(f"✅ Route found from {result['source']} to {result['destination']}!")
     
     # Route information
     st.markdown("### 🛫 Route Information")
@@ -413,23 +508,111 @@ def main():
     if mode == "Shortest Route":
         st.sidebar.markdown("### 🛫 Find Shortest Route")
         
-        # Get available airports
+        # Popular routes quick access
+        st.sidebar.markdown("#### ⚡ Quick Examples")
+        popular_routes = get_popular_routes()
+        
+        cols = st.sidebar.columns(2)
+        for i, route in enumerate(popular_routes[:4]):  # Show first 4
+            col_idx = i % 2
+            if cols[col_idx].button(f"{route['from']}→{route['to']}", key=f"quick_{i}", use_container_width=True):
+                st.session_state['quick_from'] = route['from']
+                st.session_state['quick_to'] = route['to']
+        
+        st.sidebar.markdown("---")
+        
+        # Airport search
         airports_df = analyzer.airports_df
         airport_options = airports_df[airports_df['iata'].notna()]['iata'].sort_values().tolist()
         
-        # Airport selection
-        source_airport = st.sidebar.selectbox("From Airport", airport_options)
-        dest_airport = st.sidebar.selectbox("To Airport", airport_options)
+        # Search for source airport
+        st.sidebar.markdown("#### 🔍 Search Airport")
+        search_from = st.sidebar.text_input("Search From Airport (IATA, Name, City)", 
+                                           value=st.session_state.get('quick_from', ''),
+                                           key="search_from",
+                                           placeholder="e.g., SGN, Ho Chi Minh, or Vietnam")
+        
+        if search_from:
+            search_results_from = search_airports(airports_df, search_from, limit=10)
+            if search_results_from:
+                selected_from_display = st.sidebar.selectbox(
+                    "Select From Airport",
+                    options=[r['display'] for r in search_results_from],
+                    key="select_from_display"
+                )
+                source_airport = next((r['iata'] for r in search_results_from if r['display'] == selected_from_display), None)
+            else:
+                st.sidebar.warning("No airports found. Try different search term.")
+                source_airport = None
+        else:
+            # Fallback to selectbox if no search
+            default_index = 0
+            if st.session_state.get('quick_from') and st.session_state.get('quick_from') in airport_options:
+                default_index = airport_options.index(st.session_state.get('quick_from'))
+            source_airport = st.sidebar.selectbox("From Airport", airport_options, index=default_index, key="from_selectbox")
+        
+        # Show airport info if selected
+        if source_airport:
+            airport_info = get_airport_info(airports_df, source_airport)
+            if airport_info:
+                connected_count = get_connected_airports_count(analyzer, source_airport)
+                st.sidebar.info(f"**{airport_info['name']}**\n{airport_info['city']}, {airport_info['country']}\n✈️ {connected_count} connections")
+        
+        # Search for destination airport
+        search_to = st.sidebar.text_input("Search To Airport (IATA, Name, City)", 
+                                          value=st.session_state.get('quick_to', ''),
+                                          key="search_to",
+                                          placeholder="e.g., LHR, London, or UK")
+        
+        if search_to:
+            search_results_to = search_airports(airports_df, search_to, limit=10)
+            if search_results_to:
+                selected_to_display = st.sidebar.selectbox(
+                    "Select To Airport",
+                    options=[r['display'] for r in search_results_to],
+                    key="select_to_display"
+                )
+                dest_airport = next((r['iata'] for r in search_results_to if r['display'] == selected_to_display), None)
+            else:
+                st.sidebar.warning("No airports found. Try different search term.")
+                dest_airport = None
+        else:
+            # Fallback to selectbox if no search
+            default_index = 0
+            if st.session_state.get('quick_to') and st.session_state.get('quick_to') in airport_options:
+                default_index = airport_options.index(st.session_state.get('quick_to'))
+            dest_airport = st.sidebar.selectbox("To Airport", airport_options, index=default_index, key="to_selectbox")
+        
+        # Show airport info if selected
+        if dest_airport:
+            airport_info = get_airport_info(airports_df, dest_airport)
+            if airport_info:
+                connected_count = get_connected_airports_count(analyzer, dest_airport)
+                st.sidebar.info(f"**{airport_info['name']}**\n{airport_info['city']}, {airport_info['country']}\n✈️ {connected_count} connections")
+        
+        # Clear quick route state
+        if 'quick_from' in st.session_state:
+            del st.session_state['quick_from']
+        if 'quick_to' in st.session_state:
+            del st.session_state['quick_to']
+        
+        st.sidebar.markdown("---")
         
         # Find route button
-        if st.sidebar.button("🔍 Find Route", type="primary"):
-            with st.spinner("Finding shortest route..."):
-                result = analyzer.find_shortest_path(source_airport, dest_airport)
-                st.session_state['route_result'] = result
+        if source_airport and dest_airport:
+            if st.sidebar.button("🔍 Find Route", type="primary", use_container_width=True):
+                with st.spinner("Finding shortest route..."):
+                    result = analyzer.find_shortest_path(source_airport, dest_airport)
+                    st.session_state['route_result'] = result
+        else:
+            st.sidebar.warning("⚠️ Please select both airports")
         
         # Display results
         if 'route_result' in st.session_state:
             display_shortest_path_result(st.session_state['route_result'], analyzer)
+        else:
+            # Show helpful message when no result
+            st.info("👆 **How to use:**\n1. Search or select your departure airport\n2. Search or select your destination airport\n3. Click 'Find Route' to discover the shortest path\n\n💡 **Tip:** Use Quick Examples above for popular routes!")
     
     elif mode == "Hub Analysis":
         st.sidebar.markdown("### 🏢 Hub Analysis")
