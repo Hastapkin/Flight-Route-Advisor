@@ -1,8 +1,8 @@
-# ✈️ Flight Route Advisor
+# Flight Route Advisor
 
 A comprehensive flight network analysis system with interactive visualization and route optimization capabilities.
 
-## 🎯 Project Overview
+## Project Overview
 
 This project analyzes global flight networks using OpenFlights data, providing:
 - **Route Optimization**: Find shortest paths between airports
@@ -10,7 +10,7 @@ This project analyzes global flight networks using OpenFlights data, providing:
 - **What-If Analysis**: Assess network impact when removing hubs
 - **Interactive Visualization**: Gephi network graphs and Streamlit web app
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Installation
 ```bash
@@ -40,7 +40,7 @@ python -m pipeline.main_pipeline
 streamlit run app/streamlit_app.py
 ```
 
-## 📊 Features
+## Features
 
 ### 1. **Shortest Route Analysis**
 - Find optimal flight paths between any two airports
@@ -52,7 +52,7 @@ streamlit run app/streamlit_app.py
 - Analyze hubs by country or globally
 - Degree, Betweenness, Closeness, and PageRank centrality
 
-### 3. **Hub Removal What-If Analysis** ⭐
+### 3. **Hub Removal What-If Analysis**
 - Simulate removing critical hubs
 - Assess network impact and resilience
 - Find alternative routes and backup hubs
@@ -62,30 +62,30 @@ streamlit run app/streamlit_app.py
 - Multiple network views (full, major hubs, long-distance, international)
 - Interactive network exploration
 
-## 🗂️ Project Structure
+## Project Structure
 
 ```
 Flight-Route-Advisor/
-├── 📁 app/
-│   └── streamlit_app.py          # Interactive web application
-├── 📁 pipeline/
-│   ├── loader.py                 # Data loading
-│   ├── cleaner_*.py              # Data cleaning modules
-│   ├── utils_distance.py         # Distance calculations
-│   ├── graph_analyzer.py         # Network analysis
-│   └── main_pipeline.py          # Main processing pipeline
-├── 📁 notebook/
-│   └── flight_route.ipynb        # Gephi export & analysis
-├── 📁 data/
-│   ├── cleaned/                  # Processed CSV files
-│   └── gephi/                    # Gephi visualization files
-├── 📄 requirements.txt           # Python dependencies
-├── 📄 run_app.py                # Application launcher
-├── 📄 test_app.py               # Testing & validation
-└── 📄 report_template.md        # Analysis report template
+|-- app/
+|   `-- streamlit_app.py          # Interactive web application
+|-- pipeline/
+|   |-- loader.py                 # Data loading
+|   |-- cleaner_*.py              # Data cleaning modules
+|   |-- utils_distance.py         # Distance calculations
+|   |-- graph_analyzer.py         # Network analysis
+|   `-- main_pipeline.py          # Main processing pipeline
+|-- notebook/
+|   `-- flight_route.ipynb        # Gephi export & analysis
+|-- data/
+|   |-- cleaned/                  # Processed CSV files
+|   `-- gephi/                    # Gephi visualization files
+|-- requirements.txt           # Python dependencies
+|-- run_app.py                # Application launcher
+|-- test_app.py               # Testing & validation
+`-- report_template.md        # Analysis report template
 ```
 
-## 🔧 Technical Details
+## Technical Details
 
 ### Data Pipeline
 1. **Loading**: OpenFlights raw data (.dat files)
@@ -102,7 +102,7 @@ Flight-Route-Advisor/
 - **Folium**: Interactive maps
 - **Gephi**: Network visualization
 
-## 📈 Analysis Capabilities
+## Analysis Capabilities
 
 ### Network Metrics
 - **Connectivity**: Strong/weak connectivity analysis
@@ -116,7 +116,7 @@ Flight-Route-Advisor/
 - **Statistical Charts**: Centrality and connectivity metrics
 - **Comparative Analysis**: Before/after hub removal
 
-## 🎨 Gephi Visualization Guide
+## Gephi Visualization Guide
 
 ### Network Files Available
 - `flight_network_full.gexf` - Complete network
@@ -132,14 +132,14 @@ Flight-Route-Advisor/
 4. **Edge**: Weight by distance
 5. **Filters**: Degree Range (min 3-5) for clarity
 
-## 🔍 Usage Examples
+## Usage Examples
 
 ### Find Shortest Route
 ```python
 # In Streamlit app
 Source: SGN (Ho Chi Minh City)
 Destination: LHR (London Heathrow)
-Result: SGN → DXB → LHR (2 stops, 10,432 km)
+Result: SGN -> DXB -> LHR (2 stops, 10,432 km)
 ```
 
 ### Hub Analysis
@@ -161,21 +161,21 @@ Result: SGN → DXB → LHR (2 stops, 10,432 km)
 - Alternative paths: Available for 89% of routes
 ```
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run comprehensive tests
 python test_app.py
 
 # Expected output:
-# ✅ Data loading: 7,698 airports, 66,315 routes
-# ✅ Graph building: 7,698 nodes, 36,588 edges
-# ✅ Shortest path algorithm working
-# ✅ Hub analysis working
-# ✅ All imports successful
+# Data loading: 7,698 airports, 66,315 routes
+# Graph building: 7,698 nodes, 36,588 edges
+# Shortest path algorithm working
+# Hub analysis working
+# All imports successful
 ```
 
-## 📊 Performance
+## Performance
 
 - **Data Size**: 7,698 airports, 66,315 routes
 - **Graph Size**: 7,698 nodes, 36,588 edges
@@ -183,7 +183,7 @@ python test_app.py
 - **Memory Usage**: ~500MB for full dataset
 - **Response Time**: <2 seconds for route queries
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 1. **Data not found**: Run `python -m pipeline.main_pipeline` first
@@ -200,7 +200,7 @@ streamlit run app/streamlit_app.py --logger.level debug
 python -m pipeline.main_pipeline --verbose
 ```
 
-## 📈 Future Enhancements
+## Future Enhancements
 
 - [ ] Real-time flight data integration
 - [ ] Advanced filtering and search
@@ -210,7 +210,7 @@ python -m pipeline.main_pipeline --verbose
 - [ ] Machine learning route optimization
 - [ ] Environmental impact analysis
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 

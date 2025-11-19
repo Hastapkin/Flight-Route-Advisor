@@ -70,7 +70,6 @@ GEPHI_EXPORT_SETTINGS = {
 # Streamlit settings
 STREAMLIT_CONFIG = {
     "page_title": "Flight Route Advisor",
-    "page_icon": "✈️",
     "layout": "wide",
     "initial_sidebar_state": "expanded"
 }

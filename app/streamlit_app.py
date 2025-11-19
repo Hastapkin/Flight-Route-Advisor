@@ -22,7 +22,6 @@ from pipeline.graph_analyzer import FlightGraphAnalyzer, create_flight_analyzer
 # Page configuration
 st.set_page_config(
     page_title="Flight Route Advisor",
-    page_icon="✈️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -123,14 +122,14 @@ def get_airport_info(airports_df, iata: str):
 def get_popular_routes():
     """Get list of popular routes for quick access"""
     return [
-        {"from": "SGN", "to": "LHR", "label": "Ho Chi Minh → London"},
-        {"from": "SGN", "to": "JFK", "label": "Ho Chi Minh → New York"},
-        {"from": "HAN", "to": "NRT", "label": "Hanoi → Tokyo"},
-        {"from": "SGN", "to": "DXB", "label": "Ho Chi Minh → Dubai"},
-        {"from": "BKK", "to": "LHR", "label": "Bangkok → London"},
-        {"from": "SIN", "to": "JFK", "label": "Singapore → New York"},
-        {"from": "NRT", "to": "LAX", "label": "Tokyo → Los Angeles"},
-        {"from": "CDG", "to": "JFK", "label": "Paris → New York"},
+        {"from": "SGN", "to": "LHR", "label": "Ho Chi Minh -> London"},
+        {"from": "SGN", "to": "JFK", "label": "Ho Chi Minh -> New York"},
+        {"from": "HAN", "to": "NRT", "label": "Hanoi -> Tokyo"},
+        {"from": "SGN", "to": "DXB", "label": "Ho Chi Minh -> Dubai"},
+        {"from": "BKK", "to": "LHR", "label": "Bangkok -> London"},
+        {"from": "SIN", "to": "JFK", "label": "Singapore -> New York"},
+        {"from": "NRT", "to": "LAX", "label": "Tokyo -> Los Angeles"},
+        {"from": "CDG", "to": "JFK", "label": "Paris -> New York"},
     ]
 
 
@@ -185,8 +184,7 @@ def create_airport_map(coordinates: List[Tuple[float, float, str]],
             folium.Marker(
                 [lat, lon],
                 popup=f"<b>{iata}</b>",
-                tooltip=iata,
-                icon=folium.Icon(color='blue', icon='plane', prefix='fa')
+                tooltip=iata
             ).add_to(m)
     
     # Add route line
@@ -206,11 +204,11 @@ def display_shortest_path_result(result: Dict[str, Any], analyzer: FlightGraphAn
     """Display shortest path analysis results"""
     if "error" in result:
         error_msg = result['error']
-        st.error(f"❌ {error_msg}")
+        st.error(error_msg)
         
         # Provide helpful suggestions
         if "No path found" in error_msg:
-            st.warning("💡 **Suggestions:**")
+            st.warning("Suggestions:")
             st.markdown("""
             - Try selecting airports with more connections (major hubs)
             - Check if both airports are in the network
@@ -219,15 +217,15 @@ def display_shortest_path_result(result: Dict[str, Any], analyzer: FlightGraphAn
             
             # Suggest nearby hubs
             if 'source' in result or 'destination' in result:
-                st.info("💡 **Tip:** Try using major hubs as transfer points. Go to 'Hub Analysis' to see top airports with most connections.")
+                st.info("Tip: Try using major hubs as transfer points. Go to 'Hub Analysis' to see top airports with most connections.")
         
         return
     
     # Success message
-    st.success(f"✅ Route found from {result['source']} to {result['destination']}!")
+    st.success(f"Route found from {result['source']} to {result['destination']}!")
     
     # Route information
-    st.markdown("### 🛫 Route Information")
+    st.markdown("### Route Information")
     
     col1, col2, col3 = st.columns(3)
     
@@ -241,12 +239,12 @@ def display_shortest_path_result(result: Dict[str, Any], analyzer: FlightGraphAn
         st.metric("Flight Legs", f"{len(result['legs'])}")
     
     # Route details
-    st.markdown("### 📋 Route Details")
+    st.markdown("### Route Details")
     
     route_info = f"""
-    **From:** {result['source']} → **To:** {result['destination']}
+    **From:** {result['source']} -> **To:** {result['destination']}
     
-    **Path:** {' → '.join(result['path'])}
+    **Path:** {' -> '.join(result['path'])}
     
     **Total Distance:** {result['total_distance_km']:,.0f} km
     **Stops:** {result['stops']}
@@ -269,7 +267,7 @@ def display_shortest_path_result(result: Dict[str, Any], analyzer: FlightGraphAn
         st.dataframe(legs_df, use_container_width=True)
     
     # Map visualization
-    st.markdown("### 🗺️ Route Map")
+    st.markdown("### Route Map")
     
     # Get coordinates for airports in path
     path_coordinates = analyzer.get_airport_coordinates(result['path'])
@@ -296,10 +294,10 @@ def display_shortest_path_result(result: Dict[str, Any], analyzer: FlightGraphAn
 def display_hub_analysis_result(result: Dict[str, Any]):
     """Display hub analysis results"""
     if "error" in result:
-        st.error(f"❌ {result['error']}")
+        st.error(result['error'])
         return
     
-    st.markdown(f"### 🏢 Hub Analysis - {result['country']}")
+    st.markdown(f"### Hub Analysis - {result['country']}")
     
     # Summary metrics
     col1, col2 = st.columns(2)
@@ -311,7 +309,7 @@ def display_hub_analysis_result(result: Dict[str, Any]):
         st.metric("Top Hubs Shown", len(result['top_hubs']))
     
     # Top hubs
-    st.markdown("### 🥇 Top Hubs")
+    st.markdown("### Top Hubs")
     
     for i, hub in enumerate(result['top_hubs'], 1):
         with st.container():
@@ -327,7 +325,7 @@ def display_hub_analysis_result(result: Dict[str, Any]):
     
     # Backup hubs
     if result['backup_hubs']:
-        st.markdown("### 🔄 Backup Hubs")
+        st.markdown("### Backup Hubs")
         
         backup_data = []
         for hub in result['backup_hubs']:
@@ -347,10 +345,10 @@ def display_hub_analysis_result(result: Dict[str, Any]):
 def display_hub_removal_result(result: Dict[str, Any]):
     """Display hub removal analysis results"""
     if "error" in result:
-        st.error(f"❌ {result['error']}")
+        st.error(result['error'])
         return
     
-    st.markdown(f"### 🔄 Hub Removal Analysis - {result['hub_removed']}")
+    st.markdown(f"### Hub Removal Analysis - {result['hub_removed']}")
     
     # Hub info
     hub_info = result['hub_info']
@@ -359,17 +357,10 @@ def display_hub_removal_result(result: Dict[str, Any]):
     
     # Impact severity
     severity = result['severity']
-    severity_color = {
-        "CRITICAL": "🔴",
-        "HIGH": "🟠", 
-        "MEDIUM": "🟡",
-        "LOW": "🟢"
-    }
-    
-    st.markdown(f"**Impact Severity:** {severity_color.get(severity, '⚪')} {severity}")
+    st.markdown(f"**Impact Severity:** {severity}")
     
     # Impact metrics
-    st.markdown("### 📊 Impact Metrics")
+    st.markdown("### Impact Metrics")
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -386,7 +377,7 @@ def display_hub_removal_result(result: Dict[str, Any]):
         st.metric("Components Increase", result['impact_metrics']['components_increase'])
     
     # Network comparison
-    st.markdown("### 📈 Network Comparison")
+    st.markdown("### Network Comparison")
     
     col1, col2 = st.columns(2)
     
@@ -407,7 +398,7 @@ def display_hub_removal_result(result: Dict[str, Any]):
         st.write(f"- Strongly Connected: {'Yes' if remaining['is_strongly_connected'] else 'No'}")
     
     # Affected routes
-    st.markdown("### 🛫 Affected Routes")
+    st.markdown("### Affected Routes")
     st.write(f"**Total Routes Affected:** {result['affected_routes_count']}")
     
     if result['affected_routes']:
@@ -425,22 +416,22 @@ def display_hub_removal_result(result: Dict[str, Any]):
     
     # Alternative paths
     if result['alternative_paths']:
-        st.markdown("### 🔄 Alternative Paths")
+        st.markdown("### Alternative Paths")
         
         alt_data = []
         for alt in result['alternative_paths']:
             if alt['alternative_path'] != "NO_ALTERNATIVE":
                 alt_data.append({
-                    "Original Route": f"{alt['original_from']} → {alt['original_to']}",
-                    "Alternative Path": " → ".join(alt['alternative_path']),
+                    "Original Route": f"{alt['original_from']} -> {alt['original_to']}",
+                    "Alternative Path": " -> ".join(alt['alternative_path']),
                     "Distance (km)": f"{alt['alternative_distance']:,.0f}",
                     "Stops": alt['path_length']
                 })
             else:
                 alt_data.append({
-                    "Original Route": f"{alt['original_from']} → {alt['original_to']}",
+                    "Original Route": f"{alt['original_from']} -> {alt['original_to']}",
                     "Alternative Path": "NO ALTERNATIVE",
-                    "Distance (km)": "∞",
+                    "Distance (km)": "Infinity",
                     "Stops": "N/A"
                 })
         
@@ -452,7 +443,7 @@ def display_network_stats(analyzer: FlightGraphAnalyzer):
     """Display network statistics"""
     stats = analyzer.get_network_stats()
     
-    st.markdown("### 📊 Network Statistics")
+    st.markdown("### Network Statistics")
     
     col1, col2, col3 = st.columns(3)
     
@@ -466,7 +457,7 @@ def display_network_stats(analyzer: FlightGraphAnalyzer):
         st.metric("Network Density", f"{stats['density']:.4f}")
     
     # Connectivity info
-    st.markdown("#### 🔗 Connectivity")
+    st.markdown("#### Connectivity")
     
     col1, col2 = st.columns(2)
     
@@ -483,7 +474,7 @@ def main():
     """Main Streamlit application"""
     
     # Header
-    st.markdown('<h1 class="main-header">✈️ Flight Route Advisor</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">Flight Route Advisor</h1>', unsafe_allow_html=True)
     st.markdown("---")
     
     # Load data
@@ -495,7 +486,7 @@ def main():
         return
     
     # Sidebar
-    st.sidebar.markdown("## 🎛️ Controls")
+    st.sidebar.markdown("## Controls")
     
     # Mode selection
     mode = st.sidebar.selectbox(
@@ -506,16 +497,16 @@ def main():
     st.sidebar.markdown("---")
     
     if mode == "Shortest Route":
-        st.sidebar.markdown("### 🛫 Find Shortest Route")
+        st.sidebar.markdown("### Find Shortest Route")
         
         # Popular routes quick access
-        st.sidebar.markdown("#### ⚡ Quick Examples")
+        st.sidebar.markdown("#### Quick Examples")
         popular_routes = get_popular_routes()
         
         cols = st.sidebar.columns(2)
         for i, route in enumerate(popular_routes[:4]):  # Show first 4
             col_idx = i % 2
-            if cols[col_idx].button(f"{route['from']}→{route['to']}", key=f"quick_{i}", use_container_width=True):
+            if cols[col_idx].button(f"{route['from']}->{route['to']}", key=f"quick_{i}", use_container_width=True):
                 st.session_state['quick_from'] = route['from']
                 st.session_state['quick_to'] = route['to']
         
@@ -526,7 +517,7 @@ def main():
         airport_options = airports_df[airports_df['iata'].notna()]['iata'].sort_values().tolist()
         
         # Search for source airport
-        st.sidebar.markdown("#### 🔍 Search Airport")
+        st.sidebar.markdown("#### Search Airport")
         search_from = st.sidebar.text_input("Search From Airport (IATA, Name, City)", 
                                            value=st.session_state.get('quick_from', ''),
                                            key="search_from",
@@ -556,7 +547,7 @@ def main():
             airport_info = get_airport_info(airports_df, source_airport)
             if airport_info:
                 connected_count = get_connected_airports_count(analyzer, source_airport)
-                st.sidebar.info(f"**{airport_info['name']}**\n{airport_info['city']}, {airport_info['country']}\n✈️ {connected_count} connections")
+                st.sidebar.info(f"**{airport_info['name']}**\n{airport_info['city']}, {airport_info['country']}\n{connected_count} connections")
         
         # Search for destination airport
         search_to = st.sidebar.text_input("Search To Airport (IATA, Name, City)", 
@@ -588,7 +579,7 @@ def main():
             airport_info = get_airport_info(airports_df, dest_airport)
             if airport_info:
                 connected_count = get_connected_airports_count(analyzer, dest_airport)
-                st.sidebar.info(f"**{airport_info['name']}**\n{airport_info['city']}, {airport_info['country']}\n✈️ {connected_count} connections")
+                st.sidebar.info(f"**{airport_info['name']}**\n{airport_info['city']}, {airport_info['country']}\n{connected_count} connections")
         
         # Clear quick route state
         if 'quick_from' in st.session_state:
@@ -600,22 +591,22 @@ def main():
         
         # Find route button
         if source_airport and dest_airport:
-            if st.sidebar.button("🔍 Find Route", type="primary", use_container_width=True):
+            if st.sidebar.button("Find Route", type="primary", use_container_width=True):
                 with st.spinner("Finding shortest route..."):
                     result = analyzer.find_shortest_path(source_airport, dest_airport)
                     st.session_state['route_result'] = result
         else:
-            st.sidebar.warning("⚠️ Please select both airports")
+            st.sidebar.warning("Please select both airports")
         
         # Display results
         if 'route_result' in st.session_state:
             display_shortest_path_result(st.session_state['route_result'], analyzer)
         else:
             # Show helpful message when no result
-            st.info("👆 **How to use:**\n1. Search or select your departure airport\n2. Search or select your destination airport\n3. Click 'Find Route' to discover the shortest path\n\n💡 **Tip:** Use Quick Examples above for popular routes!")
+            st.info("How to use:\n1. Search or select your departure airport\n2. Search or select your destination airport\n3. Click 'Find Route' to discover the shortest path\n\nTip: Use Quick Examples above for popular routes!")
     
     elif mode == "Hub Analysis":
-        st.sidebar.markdown("### 🏢 Hub Analysis")
+        st.sidebar.markdown("### Hub Analysis")
         
         # Country selection
         countries = analyzer.airports_df['country'].dropna().unique().tolist()
@@ -626,7 +617,7 @@ def main():
         top_n = st.sidebar.slider("Number of Top Hubs", 5, 20, 10)
         
         # Analyze button
-        if st.sidebar.button("🔍 Analyze Hubs", type="primary"):
+        if st.sidebar.button("Analyze Hubs", type="primary"):
             with st.spinner("Analyzing hubs..."):
                 country_filter = None if selected_country == "Global" else selected_country
                 result = analyzer.analyze_hubs(country_filter, top_n)
@@ -637,7 +628,7 @@ def main():
             display_hub_analysis_result(st.session_state['hub_result'])
     
     elif mode == "Hub Removal What-If":
-        st.sidebar.markdown("### 🔄 Hub Removal Analysis")
+        st.sidebar.markdown("### Hub Removal Analysis")
         
         # Get available hubs
         airports_df = analyzer.airports_df
@@ -647,7 +638,7 @@ def main():
         selected_hub = st.sidebar.selectbox("Select Hub to Remove", hub_options)
         
         # Analyze button
-        if st.sidebar.button("🔍 Analyze Impact", type="primary"):
+        if st.sidebar.button("Analyze Impact", type="primary"):
             with st.spinner("Analyzing hub removal impact..."):
                 result = analyzer.hub_removal_analysis(selected_hub)
                 st.session_state['removal_result'] = result
@@ -657,15 +648,15 @@ def main():
             display_hub_removal_result(st.session_state['removal_result'])
     
     elif mode == "Network Overview":
-        st.sidebar.markdown("### 📊 Network Overview")
+        st.sidebar.markdown("### Network Overview")
         
         # Display network statistics
         display_network_stats(analyzer)
         
         # Global hub analysis
-        st.markdown("### 🌍 Global Top Hubs")
+        st.markdown("### Global Top Hubs")
         
-        if st.button("🔍 Analyze Global Hubs", type="primary"):
+        if st.button("Analyze Global Hubs", type="primary"):
             with st.spinner("Analyzing global hubs..."):
                 result = analyzer.analyze_hubs(None, 20)
                 st.session_state['global_hub_result'] = result

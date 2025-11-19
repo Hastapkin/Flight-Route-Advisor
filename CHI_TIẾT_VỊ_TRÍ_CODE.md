@@ -75,7 +75,7 @@ if mode == "Shortest Route":
     source_airport = st.sidebar.selectbox("From Airport", airport_options)
     dest_airport = st.sidebar.selectbox("To Airport", airport_options)
     
-    if st.sidebar.button("🔍 Find Route", type="primary"):
+    if st.sidebar.button("Find Route", type="primary"):
         result = analyzer.find_shortest_path(source_airport, dest_airport)
         display_shortest_path_result(result, analyzer)
 
@@ -84,7 +84,7 @@ if mode == "Shortest Route":
 ```
 
 **Kết quả trả về:**
-- Path: Danh sách các sân bay (ví dụ: SGN → DXB → LHR)
+- Path: Danh sách các sân bay (ví dụ: SGN -> DXB -> LHR)
 - Total distance: Tổng khoảng cách
 - Stops: Số điểm dừng
 - Legs: Chi tiết từng chặng bay
@@ -115,12 +115,12 @@ def analyze_hubs(self, country: str = None, top_n: int = 10) -> Dict[str, Any]:
     
     # Top hubs và backup hubs
     top_hubs = hubs_data[:top_n]
-    backup_hubs = hubs_data[top_n:top_n*2]  # ⭐ BACKUP HUBS (alternative hubs)
+    backup_hubs = hubs_data[top_n:top_n*2]  # BACKUP HUBS (alternative hubs)
     
     return {
         "country": country or "Global",
         "top_hubs": top_hubs,
-        "backup_hubs": backup_hubs,  # ⭐ Đây là alternative hubs
+        "backup_hubs": backup_hubs,  # Đây là alternative hubs
         "total_airports": len(hubs_data)
     }
 ```
@@ -135,13 +135,13 @@ elif mode == "Hub Analysis":
     selected_country = st.sidebar.selectbox("Select Country", countries)
     top_n = st.sidebar.slider("Number of Top Hubs", 5, 20, 10)
     
-    if st.sidebar.button("🔍 Analyze Hubs", type="primary"):
+    if st.sidebar.button("Analyze Hubs", type="primary"):
         result = analyzer.analyze_hubs(country_filter, top_n)
         display_hub_analysis_result(result)
 
 # Dòng 233-249: Hiển thị backup hubs
 if result['backup_hubs']:
-    st.markdown("### 🔄 Backup Hubs")  # ⭐ Alternative hubs được hiển thị ở đây
+    st.markdown("### Backup Hubs")  # Alternative hubs được hiển thị ở đây
     backup_df = pd.DataFrame(backup_data)
     st.dataframe(backup_df, use_container_width=True)
 ```
@@ -197,7 +197,7 @@ def _build_graph(self) -> None:
             self.graph.add_edge(
                 route['source_airport_id'],
                 route['destination_airport_id'],
-                weight=float(route['distance_km']),  # ⭐ Weight cho shortest path
+                weight=float(route['distance_km']),  # Weight cho shortest path
                 distance_km=float(route['distance_km'])
             )
 ```
@@ -223,7 +223,7 @@ def hub_removal_analysis(self, hub_iata: str) -> Dict[str, Any]:
     
     # 2. Tạo copy graph và remove hub
     graph_without_hub = self.graph.copy()
-    graph_without_hub.remove_node(hub_id)  # ⭐ Remove hub
+    graph_without_hub.remove_node(hub_id)  # Remove hub
     
     # 3. Lấy network stats sau khi remove
     remaining_stats = {
@@ -258,7 +258,7 @@ def hub_removal_analysis(self, hub_iata: str) -> Dict[str, Any]:
         "remaining_stats": remaining_stats,
         "impact_metrics": impact_metrics,
         "affected_routes": affected_routes,
-        "alternative_paths": alternative_paths,  # ⭐ Alternative paths sau khi remove hub
+        "alternative_paths": alternative_paths,  # Alternative paths sau khi remove hub
         "severity": severity  # CRITICAL, HIGH, MEDIUM, LOW
     }
 ```
@@ -283,7 +283,7 @@ def _find_alternative_paths(self, removed_hub_id: int, graph_without_hub: nx.DiG
 elif mode == "Hub Removal What-If":
     selected_hub = st.sidebar.selectbox("Select Hub to Remove", hub_options)
     
-    if st.sidebar.button("🔍 Analyze Impact", type="primary"):
+    if st.sidebar.button("Analyze Impact", type="primary"):
         result = analyzer.hub_removal_analysis(selected_hub)
         display_hub_removal_result(result)
 
@@ -292,7 +292,7 @@ elif mode == "Hub Removal What-If":
 # - Impact metrics (nodes lost, edges lost, density change)
 # - Network comparison (before/after)
 # - Affected routes
-# - Alternative paths  ⭐
+# - Alternative paths
 ```
 
 **Kết quả phân tích:**
@@ -328,10 +328,10 @@ hub_info = {
     "name": airport_info['name'],
     "city": airport_info['city'],
     "country": airport_info['country'],
-    "degree_centrality": degree_centrality.get(node, 0),        # ⭐
-    "betweenness_centrality": betweenness_centrality.get(node, 0),  # ⭐
-    "closeness_centrality": closeness_centrality.get(node, 0),      # ⭐
-    "pagerank": pagerank.get(node, 0)                                # ⭐
+    "degree_centrality": degree_centrality.get(node, 0),        
+    "betweenness_centrality": betweenness_centrality.get(node, 0),  
+    "closeness_centrality": closeness_centrality.get(node, 0),      
+    "pagerank": pagerank.get(node, 0)                                
 }
 ```
 
@@ -449,13 +449,13 @@ GEPHI_EXPORT_SETTINGS = {
 
 ---
 
-## 📊 TỔNG KẾT VỊ TRÍ CODE
+## TỔNG KẾT VỊ TRÍ CODE
 
 | Yêu cầu | File chính | Dòng code | Function/Method |
 |---------|-----------|-----------|-----------------|
 | **Dataset: OpenFlights** | `pipeline/loader.py` | 11-84 | `OpenFlightsLoader.load()` |
 | **Robust Transfer Paths** | `pipeline/graph_analyzer.py` | 63-125 | `find_shortest_path()` |
-| **Alternative Hubs** | `pipeline/graph_analyzer.py` | 127-179 | `analyze_hubs()` → `backup_hubs` |
+| **Alternative Hubs** | `pipeline/graph_analyzer.py` | 127-179 | `analyze_hubs()` -> `backup_hubs` |
 | **Shortest Paths Method** | `pipeline/graph_analyzer.py` | 84-99 | `nx.shortest_path()` |
 | **Hub Removal What-If** | `pipeline/graph_analyzer.py` | 196-271 | `hub_removal_analysis()` |
 | **Centrality Method** | `pipeline/graph_analyzer.py` | 141-145 | 4 centrality measures |
