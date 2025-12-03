@@ -30,38 +30,41 @@ class OpenFlightsLoader:
 
 ### Vị trí chính: `pipeline/graph_analyzer.py`
 
-**Function tìm đường chuyển bay tối ưu:**
+**Function tìm đường chuyển bay đa tiêu chí:**
 
 ```python
-# Dòng 63-125: find_shortest_path()
-def find_shortest_path(self, source_iata: str, dest_iata: str) -> Dict[str, Any]:
+# Dòng 63-196: find_shortest_path() + find_optimized_route()
+def find_optimized_route(self, source_iata, dest_iata,
+                         objective="distance", preferences=None):
     """
-    Find shortest path between two airports using Dijkstra algorithm
+    Tối ưu tuyến bay theo:
+    - Shortest distance (Dijkstra với weight=distance)
+    - Fewer transfers (BFS, weight=1)
+    Đồng thời áp constraint:
+    - avoid_countries / allowed_countries (lọc node trung gian)
+    - preferred_airlines (lọc edge theo airline code)
     """
-    # Tìm shortest path với Dijkstra
-    path_nodes = nx.shortest_path(
-        self.graph, 
-        source_id, 
-        dest_id, 
-        weight='weight'  # Sử dụng distance làm weight
-    )
-    
-    # Tính tổng khoảng cách
-    total_distance = nx.shortest_path_length(
-        self.graph, 
-        source_id, 
-        dest_id, 
-        weight='weight'
-    )
-    
-    # Trả về path với stops, legs, distance
+    working_graph = self.graph.copy()
+    self._apply_preferences(working_graph, source_id, dest_id, preferences)
+
+    if objective == "transfers":
+        path_nodes = nx.shortest_path(working_graph, source_id, dest_id)
+    else:
+        path_nodes = nx.shortest_path(
+            working_graph, source_id, dest_id, weight="weight"
+        )
+
+    # Trả về path + tiêu chí tóm tắt (objective + notes)
     return {
-        "source": source_iata,
-        "destination": dest_iata,
-        "path": path_iata,  # Danh sách các sân bay trung gian
+        "path": path_iata,
         "total_distance_km": total_distance,
-        "legs": legs,  # Chi tiết từng chặng bay
-        "stops": len(path_nodes) - 2  # Số điểm dừng
+        "legs": [
+            {"from": ..., "to": ..., "distance_km": ..., "airline": ...}
+        ],
+        "criteria_summary": {
+            "objective": "Shortest Distance",
+            "notes": ["Avoided transit countries: UAE", ...]
+        }
     }
 ```
 
@@ -70,17 +73,22 @@ def find_shortest_path(self, source_iata: str, dest_iata: str) -> Dict[str, Any]
 **Hiển thị trong Streamlit app:**
 
 ```python
-# Dòng 413-432: Mode "Shortest Route"
-if mode == "Shortest Route":
-    source_airport = st.sidebar.selectbox("From Airport", airport_options)
-    dest_airport = st.sidebar.selectbox("To Airport", airport_options)
-    
-    if st.sidebar.button("Find Route", type="primary"):
-        result = analyzer.find_shortest_path(source_airport, dest_airport)
-        display_shortest_path_result(result, analyzer)
+# Dòng 499-615: Mode "Shortest Route"
+objective_choice = st.sidebar.selectbox(
+    "Primary Objective", ["Shortest Distance", "Fewest Transfers"]
+)
+avoid_countries = st.sidebar.multiselect("Avoid Transit Countries", country_options)
+allowed_countries = st.sidebar.multiselect("Only Allow Transit Countries", country_options)
+preferred_airlines = st.sidebar.multiselect("Preferred Airlines", airline_options)
 
-# Dòng 128-199: display_shortest_path_result()
-# Hiển thị route với map visualization (Folium)
+if st.sidebar.button("Find Route", type="primary"):
+    preferences = {...}
+    result = analyzer.find_optimized_route(
+        source_airport, dest_airport,
+        objective=optimization_key,
+        preferences=preferences
+    )
+    display_shortest_path_result(result, analyzer)
 ```
 
 **Kết quả trả về:**
@@ -454,9 +462,9 @@ GEPHI_EXPORT_SETTINGS = {
 | Yêu cầu | File chính | Dòng code | Function/Method |
 |---------|-----------|-----------|-----------------|
 | **Dataset: OpenFlights** | `pipeline/loader.py` | 11-84 | `OpenFlightsLoader.load()` |
-| **Robust Transfer Paths** | `pipeline/graph_analyzer.py` | 63-125 | `find_shortest_path()` |
+| **Robust Transfer Paths** | `pipeline/graph_analyzer.py` | 63-210 | `find_shortest_path()` + `find_optimized_route()` |
 | **Alternative Hubs** | `pipeline/graph_analyzer.py` | 127-179 | `analyze_hubs()` -> `backup_hubs` |
-| **Shortest Paths Method** | `pipeline/graph_analyzer.py` | 84-99 | `nx.shortest_path()` |
+| **Shortest Paths Method** | `pipeline/graph_analyzer.py` | 86-139 | `nx.shortest_path()` / BFS |
 | **Hub Removal What-If** | `pipeline/graph_analyzer.py` | 196-271 | `hub_removal_analysis()` |
 | **Centrality Method** | `pipeline/graph_analyzer.py` | 141-145 | 4 centrality measures |
 | **Notebook** | `notebook/flight_route.ipynb` | Toàn bộ | Jupyter notebook |

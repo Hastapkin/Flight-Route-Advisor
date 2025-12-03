@@ -53,6 +53,7 @@ class FlightGraphAnalyzer:
                     route['destination_airport_id'],
                     weight=float(route['distance_km']),
                     distance_km=float(route['distance_km']),
+                    airline=str(route.get('airline', '')).upper(),
                     airline_id=int(route.get('airline_id', 0)) if pd.notna(route.get('airline_id')) else 0,
                     stops=int(route.get('stops', 0)) if pd.notna(route.get('stops')) else 0
                 )
@@ -81,48 +82,175 @@ class FlightGraphAnalyzer:
         if source_id == dest_id:
             return {"error": "Source and destination are the same"}
         
+        return self.find_optimized_route(
+            source_iata,
+            dest_iata,
+            objective="distance",
+            preferences={}
+        )
+
+    def find_optimized_route(
+        self,
+        source_iata: str,
+        dest_iata: str,
+        objective: str = "distance",
+        preferences: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Find routes using multiple optimization criteria.
+
+        Args:
+            source_iata: Source airport code
+            dest_iata: Destination airport code
+            objective: Optimization objective ('distance' or 'transfers')
+            preferences: Constraints (avoid_countries, allowed_countries, preferred_airlines)
+        """
+        preferences = preferences or {}
+
+        source_id = self._get_airport_id_by_iata(source_iata)
+        dest_id = self._get_airport_id_by_iata(dest_iata)
+
+        if not source_id or not dest_id:
+            return {"error": "Airport not found"}
+
+        if source_id == dest_id:
+            return {"error": "Source and destination are the same"}
+
+        working_graph = self.graph.copy()
+        self._apply_preferences(working_graph, source_id, dest_id, preferences)
+
         try:
-            # Find shortest path using Dijkstra
-            path_nodes = nx.shortest_path(
-                self.graph, 
-                source_id, 
-                dest_id, 
-                weight='weight'
-            )
-            
-            # Calculate total distance
-            total_distance = nx.shortest_path_length(
-                self.graph, 
-                source_id, 
-                dest_id, 
-                weight='weight'
-            )
-            
-            # Get path details
+            if objective == "transfers":
+                path_nodes = nx.shortest_path(working_graph, source_id, dest_id)
+                total_distance = self._calculate_path_distance(path_nodes)
+            else:
+                path_nodes = nx.shortest_path(
+                    working_graph,
+                    source_id,
+                    dest_id,
+                    weight='weight'
+                )
+                total_distance = nx.shortest_path_length(
+                    working_graph,
+                    source_id,
+                    dest_id,
+                    weight='weight'
+                )
+
             path_iata = [self._get_iata_by_airport_id(node) for node in path_nodes]
             legs = []
-            
+
             for i in range(len(path_nodes) - 1):
                 edge_data = self.graph[path_nodes[i]][path_nodes[i+1]]
                 legs.append({
                     "from": path_iata[i],
                     "to": path_iata[i+1],
-                    "distance_km": edge_data.get('distance_km', 0)
+                    "distance_km": edge_data.get('distance_km', 0),
+                    "airline": edge_data.get('airline', ''),
+                    "stops": edge_data.get('stops', 0)
                 })
-            
+
+            summary = self._build_criteria_summary(objective, preferences, len(path_nodes) - 2)
+
             return {
                 "source": source_iata,
                 "destination": dest_iata,
                 "path": path_iata,
                 "total_distance_km": total_distance,
                 "legs": legs,
-                "stops": len(path_nodes) - 2
+                "stops": len(path_nodes) - 2,
+                "objective": objective,
+                "criteria_summary": summary
             }
-            
+
         except nx.NetworkXNoPath:
-            return {"error": "No path found between airports"}
+            return {"error": "No path found with current constraints"}
         except Exception as e:
-            return {"error": f"Error finding path: {str(e)}"}
+            return {"error": f"Error finding route: {str(e)}"}
+
+    def _apply_preferences(
+        self,
+        graph: nx.DiGraph,
+        source_id: int,
+        dest_id: int,
+        preferences: Dict[str, Any]
+    ) -> None:
+        """Apply airline and country constraints to a working graph."""
+        avoid_countries = {
+            country.lower()
+            for country in preferences.get("avoid_countries", [])
+            if country
+        }
+        allowed_countries = {
+            country.lower()
+            for country in preferences.get("allowed_countries", [])
+            if country
+        }
+        preferred_airlines = {
+            airline.upper()
+            for airline in preferences.get("preferred_airlines", [])
+            if airline
+        }
+
+        if avoid_countries or allowed_countries:
+            nodes_to_remove = []
+            for node, data in graph.nodes(data=True):
+                if node in (source_id, dest_id):
+                    continue
+                country = str(data.get("country", "")).lower()
+
+                if allowed_countries and country not in allowed_countries:
+                    nodes_to_remove.append(node)
+                elif avoid_countries and country in avoid_countries:
+                    nodes_to_remove.append(node)
+
+            graph.remove_nodes_from(nodes_to_remove)
+
+        if preferred_airlines:
+            edges_to_remove = []
+            for u, v, data in graph.edges(data=True):
+                airline = str(data.get("airline", "")).upper()
+                if airline and airline not in preferred_airlines:
+                    edges_to_remove.append((u, v))
+            graph.remove_edges_from(edges_to_remove)
+
+    def _calculate_path_distance(self, path_nodes: List[int]) -> float:
+        """Calculate distance for an unweighted path."""
+        distance = 0.0
+        for i in range(len(path_nodes) - 1):
+            edge_data = self.graph[path_nodes[i]][path_nodes[i + 1]]
+            distance += edge_data.get('distance_km', 0)
+        return distance
+
+    def _build_criteria_summary(
+        self,
+        objective: str,
+        preferences: Dict[str, Any],
+        transfers: int
+    ) -> Dict[str, Any]:
+        """Create a structured summary describing applied criteria."""
+        summary = {
+            "objective": "Shortest Distance" if objective == "distance" else "Fewest Transfers",
+            "transfers": transfers,
+            "notes": []
+        }
+
+        if preferences.get("preferred_airlines"):
+            summary["notes"].append(
+                f"Airlines restricted to: {', '.join(preferences['preferred_airlines'])}"
+            )
+
+        if preferences.get("avoid_countries"):
+            summary["notes"].append(
+                f"Avoided transit countries: {', '.join(preferences['avoid_countries'])}"
+            )
+
+        if preferences.get("allowed_countries"):
+            summary["notes"].append(
+                f"Transit limited to: {', '.join(preferences['allowed_countries'])}"
+            )
+
+        return summary
     
     def analyze_hubs(self, country: str = None, top_n: int = 10) -> Dict[str, Any]:
         """

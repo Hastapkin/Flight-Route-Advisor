@@ -62,6 +62,11 @@ streamlit run app/streamlit_app.py
 - Multiple network views (full, major hubs, long-distance, international)
 - Interactive network exploration
 
+### 5. **Multi-Criteria Routing**
+- Optimize for either shortest distance or minimum transfers
+- Filter transit countries to avoid or allow specific regions
+- Restrict routes to preferred airlines or alliances
+
 ## Project Structure
 
 ```
@@ -141,6 +146,12 @@ Source: SGN (Ho Chi Minh City)
 Destination: LHR (London Heathrow)
 Result: SGN -> DXB -> LHR (2 stops, 10,432 km)
 ```
+
+### Configure Routing Preferences
+- Choose **Primary Objective**: shortest distance or fewest transfers.
+- Use **Avoid Transit Countries** to skip regions with visa or risk constraints.
+- Use **Only Allow Transit Countries** to lock the itinerary to trusted countries.
+- Select **Preferred Airlines** to keep the route within a specific carrier or alliance.
 
 ### Hub Analysis
 ```python
