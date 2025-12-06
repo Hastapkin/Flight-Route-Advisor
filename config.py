@@ -41,6 +41,38 @@ DEFAULT_TOP_HUBS = 10
 MAX_ALTERNATIVE_PATHS = 5
 EARTH_RADIUS_KM = 6371  # Mean radius of Earth
 
+# Flight time calculation settings
+AVERAGE_FLIGHT_SPEED_KMH = 800  # Average commercial aircraft speed in km/h (fallback)
+
+# Distance-based speed profiles (more accurate than fixed speed)
+FLIGHT_SPEED_PROFILES = {
+    "short_haul": {
+        "max_distance_km": 1000,
+        "speed_kmh": 650,  # Slower due to climb/descent time
+        "buffer_hours": 0.5  # Taxi, takeoff, landing
+    },
+    "medium_haul": {
+        "max_distance_km": 5000,
+        "speed_kmh": 825,  # Medium-haul cruise speed
+        "buffer_hours": 0.75
+    },
+    "long_haul": {
+        "max_distance_km": float('inf'),
+        "speed_kmh": 925,  # Long-haul cruise speed
+        "buffer_hours": 1.0
+    }
+}
+
+TRANSIT_DELAY_HOURS = {
+    "hub": 2.0,      # Large hub airports (high degree centrality)
+    "medium": 1.5,   # Medium airports
+    "small": 1.0     # Small airports
+}
+
+# Hub classification thresholds (based on degree centrality)
+HUB_DEGREE_THRESHOLD = 0.01  # Top 1% are considered hubs
+MEDIUM_DEGREE_THRESHOLD = 0.005  # Top 0.5% to 1% are medium
+
 # Gephi export settings
 GEPHI_EXPORT_SETTINGS = {
     "full_network": {
