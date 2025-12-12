@@ -33,8 +33,8 @@ pip install -r requirements.txt
 python run_app.py
 
 # Or run separately:
-# 1. Process data
-python -m pipeline.main_pipeline
+# 1. Process data (run notebook first)
+#    Open and run notebook/flight_route.ipynb to generate cleaned data
 
 # 2. Start web app
 streamlit run app/streamlit_app.py
@@ -74,11 +74,7 @@ Flight-Route-Advisor/
 |-- app/
 |   `-- streamlit_app.py          # Interactive web application
 |-- pipeline/
-|   |-- loader.py                 # Data loading
-|   |-- cleaner_*.py              # Data cleaning modules
-|   |-- utils_distance.py         # Distance calculations
-|   |-- graph_analyzer.py         # Network analysis
-|   `-- main_pipeline.py          # Main processing pipeline
+|   `-- graph_analyzer.py          # Network graph analysis and route finding
 |-- notebook/
 |   `-- flight_route.ipynb        # Gephi export & analysis
 |-- data/
@@ -86,8 +82,6 @@ Flight-Route-Advisor/
 |   `-- gephi/                    # Gephi visualization files
 |-- requirements.txt           # Python dependencies
 |-- run_app.py                # Application launcher
-|-- test_app.py               # Testing & validation
-`-- report_template.md        # Analysis report template
 ```
 
 ## Technical Details
@@ -174,17 +168,12 @@ Result: SGN -> DXB -> LHR (2 stops, 10,432 km)
 
 ## Testing
 
-```bash
-# Run comprehensive tests
-python test_app.py
-
-# Expected output:
-# Data loading: 7,698 airports, 66,315 routes
-# Graph building: 7,698 nodes, 36,588 edges
-# Shortest path algorithm working
-# Hub analysis working
-# All imports successful
-```
+The application can be tested by running the Streamlit app and verifying:
+- Data loading: 7,698 airports, 66,315 routes
+- Graph building: 7,698 nodes, 36,588 edges
+- Shortest path algorithm working
+- Hub analysis working
+- All features functional
 
 ## Performance
 
@@ -197,7 +186,7 @@ python test_app.py
 ## Troubleshooting
 
 ### Common Issues
-1. **Data not found**: Run `python -m pipeline.main_pipeline` first
+1. **Data not found**: Run `notebook/flight_route.ipynb` first to generate cleaned data
 2. **Import errors**: Ensure virtual environment is activated
 3. **Memory issues**: Reduce dataset size in pipeline
 4. **Map not loading**: Check Folium installation
@@ -207,8 +196,7 @@ python test_app.py
 # Streamlit debug
 streamlit run app/streamlit_app.py --logger.level debug
 
-# Pipeline debug
-python -m pipeline.main_pipeline --verbose
+# Notebook: Run cells in notebook/flight_route.ipynb to regenerate data
 ```
 
 ## Future Enhancements

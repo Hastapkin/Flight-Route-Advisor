@@ -94,7 +94,8 @@ class FlightGraphAnalyzer:
         source_iata: str,
         dest_iata: str,
         objective: str = "distance",
-        preferences: Optional[Dict[str, Any]] = None
+        preferences: Optional[Dict[str, Any]] = None,
+        max_stops: Optional[int] = 2,
     ) -> Dict[str, Any]:
         """
         Find routes using multiple optimization criteria.
@@ -120,22 +121,40 @@ class FlightGraphAnalyzer:
         self._apply_preferences(working_graph, source_id, dest_id, preferences)
 
         try:
+            # Choose algorithm based on objective
             if objective == "transfers":
                 path_nodes = nx.shortest_path(working_graph, source_id, dest_id)
                 total_distance = self._calculate_path_distance(path_nodes)
             else:
-                path_nodes = nx.shortest_path(
-                    working_graph,
-                    source_id,
-                    dest_id,
-                    weight='weight'
-                )
-                total_distance = nx.shortest_path_length(
-                    working_graph,
-                    source_id,
-                    dest_id,
-                    weight='weight'
-                )
+                # Fast path when max_stops is small (common case: 0-2)
+                if max_stops is not None and max_stops <= 2:
+                    path_nodes = self._fast_constrained_path(
+                        working_graph, source_id, dest_id, max_stops=max_stops
+                    )
+                    if path_nodes is None:
+                        return {"error": f"No path found within {max_stops} stops"}
+                    total_distance = self._calculate_path_weight(working_graph, path_nodes)
+                elif max_stops is not None:
+                    # Fallback to simple paths enumeration with limit
+                    path_nodes = self._find_path_with_stop_limit(
+                        working_graph, source_id, dest_id, max_stops=max_stops
+                    )
+                    if path_nodes is None:
+                        return {"error": f"No path found within {max_stops} stops"}
+                    total_distance = self._calculate_path_weight(working_graph, path_nodes)
+                else:
+                    path_nodes = nx.shortest_path(
+                        working_graph,
+                        source_id,
+                        dest_id,
+                        weight='weight'
+                    )
+                    total_distance = nx.shortest_path_length(
+                        working_graph,
+                        source_id,
+                        dest_id,
+                        weight='weight'
+                    )
 
             path_iata = [self._get_iata_by_airport_id(node) for node in path_nodes]
             legs = []
@@ -167,6 +186,98 @@ class FlightGraphAnalyzer:
             return {"error": "No path found with current constraints"}
         except Exception as e:
             return {"error": f"Error finding route: {str(e)}"}
+
+    def _calculate_path_weight(self, graph: nx.DiGraph, path_nodes: List[int]) -> float:
+        """Sum weights along a path safely."""
+        total = 0.0
+        for i in range(len(path_nodes) - 1):
+            edge_data = graph[path_nodes[i]][path_nodes[i + 1]]
+            total += float(edge_data.get("weight", edge_data.get("distance_km", 0)))
+        return total
+
+    def _fast_constrained_path(
+        self,
+        graph: nx.DiGraph,
+        source_id: int,
+        dest_id: int,
+        max_stops: int,
+    ) -> Optional[List[int]]:
+        """
+        Fast path finder for small stop limits (0-2) using direct enumeration,
+        avoiding expensive k-shortest simple paths.
+        """
+        # 0 stops: direct edge
+        if max_stops == 0:
+            if graph.has_edge(source_id, dest_id):
+                return [source_id, dest_id]
+            return None
+
+        # Pre-fetch neighbors for speed
+        neigh = graph.adj
+
+        # 1 stop: source -> mid -> dest
+        if max_stops == 1:
+            best = None
+            best_w = float("inf")
+            for mid in neigh[source_id]:
+                if mid == dest_id:
+                    return [source_id, dest_id]
+                if graph.has_edge(mid, dest_id):
+                    w = (
+                        float(graph[source_id][mid].get("weight", 0))
+                        + float(graph[mid][dest_id].get("weight", 0))
+                    )
+                    if w < best_w:
+                        best_w = w
+                        best = [source_id, mid, dest_id]
+            return best
+
+        # 2 stops: source -> m1 -> m2 -> dest
+        best = None
+        best_w = float("inf")
+        for m1 in neigh[source_id]:
+            if m1 == dest_id:
+                return [source_id, dest_id]
+            w1 = float(graph[source_id][m1].get("weight", 0))
+            for m2 in neigh[m1]:
+                if m2 == source_id:
+                    continue
+                w2 = w1 + float(graph[m1][m2].get("weight", 0))
+                if m2 == dest_id:
+                    if w2 < best_w:
+                        best_w = w2
+                        best = [source_id, m1, dest_id]
+                    continue
+                if graph.has_edge(m2, dest_id):
+                    w = w2 + float(graph[m2][dest_id].get("weight", 0))
+                    if w < best_w:
+                        best_w = w
+                        best = [source_id, m1, m2, dest_id]
+        return best
+
+    def _find_path_with_stop_limit(
+        self,
+        graph: nx.DiGraph,
+        source_id: int,
+        dest_id: int,
+        max_stops: int,
+        max_paths: int = 30,
+    ) -> Optional[List[int]]:
+        """
+        Find a path that satisfies a maximum number of stops (nodes between ends).
+        Uses k-shortest simple paths enumeration and returns the first that fits.
+        """
+        try:
+            for idx, path in enumerate(
+                nx.shortest_simple_paths(graph, source_id, dest_id, weight="weight")
+            ):
+                if len(path) - 2 <= max_stops:
+                    return path
+                if idx >= max_paths:
+                    break
+        except nx.NetworkXNoPath:
+            return None
+        return None
 
     def _apply_preferences(
         self,
@@ -447,6 +558,236 @@ class FlightGraphAnalyzer:
             return "MEDIUM"
         else:
             return "LOW"
+    
+    def find_robust_transfer_paths(
+        self,
+        source_iata: str,
+        dest_iata: str,
+        k: int = 2,
+        preferences: Optional[Dict[str, Any]] = None,
+        max_stops: Optional[int] = 2,
+    ) -> Dict[str, Any]:
+        """
+        Find multiple robust alternative transfer paths (k-shortest paths)
+        This addresses the goal: "Suggest robust transfer paths"
+        
+        Args:
+            source_iata: Source airport code
+            dest_iata: Destination airport code
+            k: Number of alternative paths to find
+            preferences: Constraints (avoid_countries, allowed_countries, preferred_airlines)
+            
+        Returns:
+            Dictionary with multiple alternative paths
+        """
+        preferences = preferences or {}
+        
+        source_id = self._get_airport_id_by_iata(source_iata)
+        dest_id = self._get_airport_id_by_iata(dest_iata)
+        
+        if not source_id or not dest_id:
+            return {"error": "Airport not found"}
+        
+        if source_id == dest_id:
+            return {"error": "Source and destination are the same"}
+        
+        working_graph = self.graph.copy()
+        self._apply_preferences(working_graph, source_id, dest_id, preferences)
+        
+        try:
+            # Find k-shortest paths using NetworkX
+            # Note: NetworkX doesn't have built-in k-shortest paths for weighted graphs
+            # We'll use a workaround: find shortest path, then find alternatives by removing edges
+            alternative_paths = []
+            
+            # First path (shortest)
+            try:
+                if max_stops is not None and max_stops <= 2:
+                    first_path = self._fast_constrained_path(
+                        working_graph, source_id, dest_id, max_stops=max_stops
+                    )
+                    if first_path is None:
+                        return {"error": f"No path found within {max_stops} stops"}
+                    first_distance = self._calculate_path_weight(working_graph, first_path)
+                elif max_stops is not None:
+                    first_path = self._find_path_with_stop_limit(
+                        working_graph, source_id, dest_id, max_stops=max_stops
+                    )
+                    if first_path is None:
+                        return {"error": f"No path found within {max_stops} stops"}
+                    first_distance = self._calculate_path_weight(working_graph, first_path)
+                else:
+                    first_path = nx.shortest_path(working_graph, source_id, dest_id, weight='weight')
+                    first_distance = nx.shortest_path_length(working_graph, source_id, dest_id, weight='weight')
+                
+                alternative_paths.append({
+                    "path": [self._get_iata_by_airport_id(node) for node in first_path],
+                    "distance_km": first_distance,
+                    "stops": len(first_path) - 2,
+                    "transfer_hubs": [self._get_iata_by_airport_id(node) for node in first_path[1:-1]],
+                    "rank": 1
+                })
+            except nx.NetworkXNoPath:
+                return {"error": "No path found"}
+            
+            # Find alternative paths by trying different approaches
+            # Method 1: Remove edges from shortest path and find new paths
+            temp_graph = working_graph.copy()
+            for i in range(len(first_path) - 1):
+                if temp_graph.has_edge(first_path[i], first_path[i+1]):
+                    temp_graph.remove_edge(first_path[i], first_path[i+1])
+                    
+                    try:
+                        alt_path = nx.shortest_path(temp_graph, source_id, dest_id, weight='weight')
+                        alt_distance = nx.shortest_path_length(temp_graph, source_id, dest_id, weight='weight')
+                        
+                        # Check if this is a different path
+                        if alt_path != first_path and alt_path not in [p["path"] for p in alternative_paths]:
+                            alternative_paths.append({
+                                "path": [self._get_iata_by_airport_id(node) for node in alt_path],
+                                "distance_km": alt_distance,
+                                "stops": len(alt_path) - 2,
+                                "transfer_hubs": [self._get_iata_by_airport_id(node) for node in alt_path[1:-1]],
+                                "rank": len(alternative_paths) + 1
+                            })
+                            
+                            if len(alternative_paths) >= k:
+                                break
+                    except nx.NetworkXNoPath:
+                        continue
+                    
+                    # Restore edge for next iteration
+                    temp_graph.add_edge(first_path[i], first_path[i+1], **working_graph[first_path[i]][first_path[i+1]])
+            
+            # Method 2: Find paths through different major hubs
+            if len(alternative_paths) < k:
+                top_hubs_result = self.analyze_hubs(top_n=10)
+                major_hubs = [self._get_airport_id_by_iata(hub['airport']) for hub in top_hubs_result['top_hubs'] 
+                             if hub['airport'] not in [source_iata, dest_iata]]
+                
+                for hub_id in major_hubs[:5]:  # Try top 5 hubs to reduce runtime
+                    if hub_id in working_graph.nodes() and hub_id not in first_path:
+                        try:
+                            # Path through this hub
+                            path1 = nx.shortest_path(working_graph, source_id, hub_id, weight='weight')
+                            path2 = nx.shortest_path(working_graph, hub_id, dest_id, weight='weight')
+                            
+                            # Combine paths (remove duplicate hub)
+                            combined_path = path1 + path2[1:]
+                            combined_distance = nx.shortest_path_length(working_graph, source_id, hub_id, weight='weight') + \
+                                               nx.shortest_path_length(working_graph, hub_id, dest_id, weight='weight')
+                            
+                            # Check if different from existing paths
+                            path_iata = [self._get_iata_by_airport_id(node) for node in combined_path]
+                            if path_iata not in [p["path"] for p in alternative_paths]:
+                                alternative_paths.append({
+                                    "path": path_iata,
+                                    "distance_km": combined_distance,
+                                    "stops": len(combined_path) - 2,
+                                    "transfer_hubs": [self._get_iata_by_airport_id(node) for node in combined_path[1:-1]],
+                                    "rank": len(alternative_paths) + 1,
+                                    "via_hub": self._get_iata_by_airport_id(hub_id)
+                                })
+                                
+                                if len(alternative_paths) >= k:
+                                    break
+                        except nx.NetworkXNoPath:
+                            continue
+            
+            # Sort by distance
+            alternative_paths.sort(key=lambda x: x['distance_km'])
+            
+            return {
+                "source": source_iata,
+                "destination": dest_iata,
+                "total_paths_found": len(alternative_paths),
+                "paths": alternative_paths[:k],
+                "best_path": alternative_paths[0] if alternative_paths else None
+            }
+            
+        except Exception as e:
+            return {"error": f"Error finding robust paths: {str(e)}"}
+    
+    def suggest_alternative_transfer_hubs(
+        self,
+        source_iata: str,
+        dest_iata: str,
+        top_n: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Suggest alternative transfer hubs for a route
+        This addresses the goal: "highlight alternative hubs"
+        
+        Args:
+            source_iata: Source airport code
+            dest_iata: Destination airport code
+            top_n: Number of alternative hubs to suggest
+            
+        Returns:
+            Dictionary with alternative transfer hub suggestions
+        """
+        source_id = self._get_airport_id_by_iata(source_iata)
+        dest_id = self._get_airport_id_by_iata(dest_iata)
+        
+        if not source_id or not dest_id:
+            return {"error": "Airport not found"}
+        
+        # Get hub analysis
+        hubs_result = self.analyze_hubs(top_n=50)
+        all_hubs = hubs_result['top_hubs']
+        
+        # Find hubs that can serve as transfer points
+        alternative_hubs = []
+        
+        for hub in all_hubs:
+            hub_iata = hub['airport']
+            hub_id = self._get_airport_id_by_iata(hub_iata)
+            
+            if hub_id and hub_id not in [source_id, dest_id]:
+                # Check if this hub can serve as transfer
+                try:
+                    # Check if path exists: source -> hub -> dest
+                    path1_exists = nx.has_path(self.graph, source_id, hub_id)
+                    path2_exists = nx.has_path(self.graph, hub_id, dest_id)
+                    
+                    if path1_exists and path2_exists:
+                        # Calculate total distance through this hub
+                        dist1 = nx.shortest_path_length(self.graph, source_id, hub_id, weight='weight')
+                        dist2 = nx.shortest_path_length(self.graph, hub_id, dest_id, weight='weight')
+                        total_dist = dist1 + dist2
+                        
+                        # Get direct path distance for comparison
+                        try:
+                            direct_dist = nx.shortest_path_length(self.graph, source_id, dest_id, weight='weight')
+                            efficiency = (direct_dist / total_dist) * 100 if total_dist > 0 else 0
+                        except nx.NetworkXNoPath:
+                            direct_dist = float('inf')
+                            efficiency = 100  # This hub provides connectivity
+                        
+                        alternative_hubs.append({
+                            "hub": hub_iata,
+                            "name": hub['name'],
+                            "city": hub['city'],
+                            "country": hub['country'],
+                            "degree_centrality": hub['degree_centrality'],
+                            "betweenness_centrality": hub['betweenness_centrality'],
+                            "total_distance_km": total_dist,
+                            "direct_distance_km": direct_dist,
+                            "efficiency_percent": efficiency,
+                            "path": f"{source_iata} -> {hub_iata} -> {dest_iata}"
+                        })
+                except Exception:
+                    continue
+        
+        # Sort by efficiency and centrality
+        alternative_hubs.sort(key=lambda x: (x['efficiency_percent'], x['degree_centrality']), reverse=True)
+        
+        return {
+            "source": source_iata,
+            "destination": dest_iata,
+            "alternative_hubs": alternative_hubs[:top_n],
+            "total_hubs_analyzed": len(alternative_hubs)
+        }
     
     def get_airport_coordinates(self, iata_codes: List[str]) -> List[Tuple[float, float, str]]:
         """

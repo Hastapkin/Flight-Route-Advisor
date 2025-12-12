@@ -1,15 +1,13 @@
 """
 Flight Route Advisor - Streamlit Application
-Interactive flight route analysis with map visualization
+Google Flights inspired UI for flight route analysis
 """
 
 import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import networkx as nx
 from typing import Dict, List, Tuple, Any
-import json
 import sys
 from pathlib import Path
 
@@ -23,83 +21,74 @@ from pipeline.graph_analyzer import FlightGraphAnalyzer, create_flight_analyzer
 st.set_page_config(
     page_title="Flight Route Advisor",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# Custom CSS
+# Custom CSS - Google Flights style
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1f77b4;
-        text-align: center;
+        font-size: 2rem;
+        font-weight: 400;
+        color: #202124;
+        margin-bottom: 1rem;
+    }
+    .search-container {
+        background: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.12);
         margin-bottom: 2rem;
     }
-    .metric-card {
-        background-color: #f0f2f6;
+    .route-result-card {
+        background: white;
+        border: 1px solid #dadce0;
+        border-radius: 8px;
         padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
+        margin-bottom: 1rem;
     }
-    .route-info {
-        background-color: #e8f4fd;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #1f77b4;
+    .route-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
     }
-    .hub-card {
-        background-color: #fff2e8;
-        padding: 0.8rem;
-        border-radius: 0.5rem;
-        margin: 0.3rem 0;
-        border-left: 3px solid #ff7f0e;
+    .route-path {
+        font-size: 1.1rem;
+        font-weight: 500;
+        color: #202124;
     }
-    .hero-card {
-        background: linear-gradient(120deg, #1f77b4, #4fb0ff);
-        color: white;
-        padding: 1.5rem;
-        border-radius: 1rem;
-        margin-bottom: 1.5rem;
-    }
-    .hero-metrics {
+    .route-meta {
         display: flex;
         gap: 1rem;
-        flex-wrap: wrap;
-        margin-top: 1rem;
+        color: #5f6368;
+        font-size: 0.9rem;
     }
-    .metric-chip {
-        background: rgba(255, 255, 255, 0.2);
-        padding: 0.8rem 1rem;
-        border-radius: 0.8rem;
-        min-width: 140px;
+    .hub-card {
+        background: #f8f9fa;
+        border-left: 3px solid #1a73e8;
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+        border-radius: 4px;
     }
-    .metric-chip span {
-        display: block;
-        font-size: 1.4rem;
-        font-weight: 600;
-    }
-    .search-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 1rem;
-        box-shadow: 0 15px 35px rgba(31, 119, 180, 0.08);
-        margin-bottom: 1.5rem;
-        border: 1px solid #e6ecf5;
-    }
-    .pill-label {
+    .metric-badge {
+        background: #e8f0fe;
+        color: #1a73e8;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
         font-size: 0.85rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        color: #5c6b7a;
-        letter-spacing: 0.05em;
+        font-weight: 500;
     }
-    .info-note {
-        background: #f5fbff;
-        border-left: 4px solid #1f77b4;
-        padding: 0.8rem 1rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
+    .stButton>button {
+        background-color: #1a73e8;
+        color: white;
+        border-radius: 4px;
+        border: none;
+        padding: 0.5rem 1.5rem;
+        font-weight: 500;
+    }
+    .stButton>button:hover {
+        background-color: #1557b0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -116,695 +105,345 @@ def load_data():
         return None
 
 
-def search_airports(airports_df, search_term: str, limit: int = 20):
-    """Search airports by IATA, name, city, or country"""
-    if not search_term:
-        return []
-    
-    search_term = search_term.upper()
-    results = []
-    
+def get_airport_display_map(airports_df: pd.DataFrame) -> Dict[str, str]:
+    """Return mapping from IATA to descriptive label"""
+    display_map = {}
     for _, airport in airports_df.iterrows():
-        if pd.isna(airport.get('iata')):
-            continue
-            
-        iata = str(airport.get('iata', '')).upper()
-        name = str(airport.get('name', '')).upper()
-        city = str(airport.get('city', '')).upper()
-        country = str(airport.get('country', '')).upper()
-        
-        if (search_term in iata or 
-            search_term in name or 
-            search_term in city or 
-            search_term in country):
-            results.append({
-                'iata': airport.get('iata', ''),
-                'name': airport.get('name', ''),
-                'city': airport.get('city', ''),
-                'country': airport.get('country', ''),
-                'display': f"{airport.get('iata', '')} - {airport.get('name', '')} ({airport.get('city', '')}, {airport.get('country', '')})"
-            })
-            if len(results) >= limit:
-                break
-    
-    return results
-
-
-def get_airport_info(airports_df, iata: str):
-    """Get airport information by IATA code"""
-    airport = airports_df[airports_df['iata'] == iata]
-    if not airport.empty:
-        return {
-            'iata': airport.iloc[0].get('iata', ''),
-            'name': airport.iloc[0].get('name', ''),
-            'city': airport.iloc[0].get('city', ''),
-            'country': airport.iloc[0].get('country', ''),
-            'latitude': airport.iloc[0].get('latitude', 0),
-            'longitude': airport.iloc[0].get('longitude', 0)
-        }
-    return None
+        if pd.notna(airport.get('iata')):
+            iata = str(airport.get('iata', ''))
+            name = str(airport.get('name', ''))
+            city = str(airport.get('city', ''))
+            country = str(airport.get('country', ''))
+            display_map[iata] = f"{iata} - {name} ({city}, {country})"
+    return display_map
 
 
 def get_popular_routes():
     """Get list of popular routes for quick access"""
     return [
-        {"from": "SGN", "to": "LHR", "label": "Ho Chi Minh -> London"},
-        {"from": "SGN", "to": "JFK", "label": "Ho Chi Minh -> New York"},
-        {"from": "HAN", "to": "NRT", "label": "Hanoi -> Tokyo"},
-        {"from": "SGN", "to": "DXB", "label": "Ho Chi Minh -> Dubai"},
-        {"from": "BKK", "to": "LHR", "label": "Bangkok -> London"},
-        {"from": "SIN", "to": "JFK", "label": "Singapore -> New York"},
-        {"from": "NRT", "to": "LAX", "label": "Tokyo -> Los Angeles"},
-        {"from": "CDG", "to": "JFK", "label": "Paris -> New York"},
+        {"from": "SGN", "to": "LHR", "label": "SGN → LHR (0 transit)", "max_stops": 0},
+        {"from": "CDG", "to": "LHR", "label": "CDG → LHR (0 transit)", "max_stops": 0},
+        {"from": "SIN", "to": "HKG", "label": "SIN → HKG (0 transit)", "max_stops": 0},
+        {"from": "SGN", "to": "LHR", "label": "SGN → LHR (1 transit)", "max_stops": 1},
+        {"from": "SGN", "to": "JFK", "label": "SGN → JFK (2 transits)", "max_stops": 2},
+        {"from": "HAN", "to": "LAX", "label": "HAN → LAX (2 transits)", "max_stops": 2},
     ]
 
 
-def get_country_options(airports_df: pd.DataFrame) -> List[str]:
-    """Return sorted list of available countries."""
-    countries = airports_df['country'].dropna().unique().tolist()
-    countries = [c for c in countries if c]
-    countries.sort()
-    return countries
-
-
-def get_airline_options(routes_df: pd.DataFrame) -> List[str]:
-    """Return sorted list of available airline codes."""
-    airlines = routes_df['airline'].dropna().unique().tolist()
-    airlines = [str(a).upper() for a in airlines if a]
-    airlines = sorted(set(airlines))
-    return airlines
-
-
-def get_airport_display_map(airports_df: pd.DataFrame) -> Dict[str, str]:
-    """Return mapping from IATA to descriptive label."""
-    display_map = {}
-    for _, row in airports_df[airports_df['iata'].notna()].iterrows():
-        iata = row['iata']
-        if not iata:
-            continue
-        display_map[iata] = f"{iata} - {row.get('name', '')} ({row.get('city', '')}, {row.get('country', '')})"
-    return display_map
-
-
-def get_connected_airports_count(analyzer, iata: str):
-    """Get number of airports connected to a given airport"""
-    try:
-        airport_id = analyzer._get_airport_id_by_iata(iata)
-        if airport_id and analyzer.graph:
-            if airport_id in analyzer.graph.nodes():
-                out_degree = analyzer.graph.out_degree(airport_id)
-                in_degree = analyzer.graph.in_degree(airport_id)
-                return out_degree + in_degree
-    except:
-        pass
-    return 0
-
-
-def create_airport_map(coordinates: List[Tuple[float, float, str]], 
-                      route_coordinates: List[Tuple[float, float]] = None,
-                      center_lat: float = None, 
-                      center_lon: float = None) -> folium.Map:
-    """
-    Create Folium map with airports and routes
+def create_route_map(coordinates: List[Tuple[float, float, str]], 
+                     route_coords: List[Tuple[float, float]] = None) -> folium.Map:
+    """Create Folium map with route visualization"""
+    if not coordinates:
+        return None
     
-    Args:
-        coordinates: List of (lat, lon, iata) tuples
-        route_coordinates: List of (lat, lon) tuples for route path
-        center_lat: Center latitude
-        center_lon: Center longitude
-        
-    Returns:
-        Folium map object
-    """
-    # Calculate center if not provided
-    if center_lat is None or center_lon is None:
-        if coordinates:
-            center_lat = sum(coord[0] for coord in coordinates) / len(coordinates)
-            center_lon = sum(coord[1] for coord in coordinates) / len(coordinates)
-        else:
-            center_lat, center_lon = 20, 0  # Default center
+    center_lat = sum(coord[0] for coord in coordinates) / len(coordinates)
+    center_lon = sum(coord[1] for coord in coordinates) / len(coordinates)
     
-    # Create map
-    m = folium.Map(
-        location=[center_lat, center_lon],
-        zoom_start=3,
-        tiles='OpenStreetMap'
-    )
-    
-    # Add airports
-    for lat, lon, iata in coordinates:
-        if lat != 0 and lon != 0:  # Valid coordinates
-            folium.Marker(
-                [lat, lon],
-                popup=f"<b>{iata}</b>",
-                tooltip=iata
-            ).add_to(m)
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=4)
     
     # Add route line
-    if route_coordinates and len(route_coordinates) > 1:
+    if route_coords and len(route_coords) > 1:
         folium.PolyLine(
-            route_coordinates,
-            color='red',
+            route_coords,
+            color="#1a73e8",
             weight=3,
-            opacity=0.8,
-            popup="Flight Route"
+            opacity=0.7
+        ).add_to(m)
+    
+    # Add markers
+    for lat, lon, iata in coordinates:
+        folium.Marker(
+            [lat, lon],
+            popup=iata,
+            icon=folium.Icon(color="blue", icon="plane", prefix="fa")
         ).add_to(m)
     
     return m
 
 
-def display_shortest_path_result(result: Dict[str, Any], analyzer: FlightGraphAnalyzer):
-    """Display shortest path analysis results"""
+def display_route_result(result: Dict[str, Any], analyzer: FlightGraphAnalyzer):
+    """Display route result in Google Flights style"""
     if "error" in result:
-        error_msg = result['error']
-        st.error(error_msg)
-        
-        # Provide helpful suggestions
-        if "No path found" in error_msg:
-            st.warning("Suggestions:")
-            st.markdown("""
-            - Try selecting airports with more connections (major hubs)
-            - Check if both airports are in the network
-            - Some airports may not have direct or connecting routes
-            """)
-            
-            # Suggest nearby hubs
-            if 'source' in result or 'destination' in result:
-                st.info("Tip: Try using major hubs as transfer points. Go to 'Hub Analysis' to see top airports with most connections.")
-        
+        st.error(f"❌ {result['error']}")
         return
     
-    # Success message
-    st.success(f"Route found from {result['source']} to {result['destination']}!")
+    st.markdown("### ✈️ Route Found")
     
-    summary = result.get('criteria_summary', {})
-    objective_label = summary.get('objective', 'Shortest Distance')
-    st.markdown(f"**Optimization Goal:** {objective_label}")
-    if summary.get('notes'):
-        for note in summary['notes']:
-            st.markdown(f"- {note}")
-    
-    # Route information
-    st.markdown("### Route Information")
-    
-    col1, col2, col3 = st.columns(3)
-    
+    # Main route card
+    col1, col2 = st.columns([3, 1])
     with col1:
-        st.metric("Total Distance", f"{result['total_distance_km']:,.0f} km")
-    
+        st.markdown(f"**{' → '.join(result['path'])}**")
+        st.caption(f"{result['stops']} stop(s) • {result['total_distance_km']:,.0f} km")
     with col2:
-        st.metric("Number of Stops", f"{result['stops']}")
-    
-    with col3:
-        st.metric("Flight Legs", f"{len(result['legs'])}")
+        st.metric("Distance", f"{result['total_distance_km']:,.0f} km")
     
     # Route details
-    st.markdown("### Route Details")
-    
-    route_info = f"""
-    **From:** {result['source']} -> **To:** {result['destination']}
-    
-    **Path:** {' -> '.join(result['path'])}
-    
-    **Total Distance:** {result['total_distance_km']:,.0f} km
-    **Stops:** {result['stops']}
-    """
-    
-    st.markdown(route_info)
-    
-    # Flight legs table
-    if result['legs']:
-        legs_data = []
+    with st.expander("Route Details", expanded=True):
         for i, leg in enumerate(result['legs'], 1):
-            legs_data.append({
-                "Leg": i,
-                "From": leg['from'],
-                "To": leg['to'],
-                "Distance (km)": f"{leg['distance_km']:,.0f}",
-                "Airline": leg.get('airline', 'N/A')
-            })
-        
-        legs_df = pd.DataFrame(legs_data)
-        st.dataframe(legs_df, use_container_width=True)
+            st.markdown(f"**Leg {i}:** {leg['from']} → {leg['to']} ({leg['distance_km']:,.0f} km)")
     
-    # Map visualization
-    st.markdown("### Route Map")
-    
-    # Get coordinates for airports in path
+    # Map
     path_coordinates = analyzer.get_airport_coordinates(result['path'])
-    
     if path_coordinates:
-        # Create route line coordinates
         route_coords = [(lat, lon) for lat, lon, _ in path_coordinates]
-        
-        # Create map
-        center_lat = sum(coord[0] for coord in path_coordinates) / len(path_coordinates)
-        center_lon = sum(coord[1] for coord in path_coordinates) / len(path_coordinates)
-        
-        m = create_airport_map(
-            path_coordinates, 
-            route_coords,
-            center_lat, 
-            center_lon
-        )
-        
-        # Display map
-        st_folium(m, width=700, height=500)
+        m = create_route_map(path_coordinates, route_coords)
+        if m:
+            st_folium(m, width=950, height=520, key="route_map_main")
 
 
-def render_route_planner(analyzer: FlightGraphAnalyzer):
-    """Render Google Flights inspired planner UI."""
-    airports_df = analyzer.airports_df
-    routes_df = analyzer.routes_df
-    
-    airport_df = airports_df[airports_df['iata'].notna()].copy()
-    airport_df = airport_df.sort_values(by='iata')
-    airport_options = airport_df['iata'].tolist()
-    if not airport_options:
-        st.warning("No airports available in dataset.")
+def display_alternative_paths(result: Dict[str, Any], analyzer: FlightGraphAnalyzer):
+    """Display alternative paths"""
+    if "error" in result:
+        st.warning(result["error"])
         return
-    
-    airport_labels = get_airport_display_map(airports_df)
-    format_func = lambda code: airport_labels.get(code, code)
-    
-    if 'planner_source_select' not in st.session_state or st.session_state['planner_source_select'] not in airport_options:
-        st.session_state['planner_source_select'] = airport_options[0]
-    if 'planner_dest_select' not in st.session_state or st.session_state['planner_dest_select'] not in airport_options:
-        st.session_state['planner_dest_select'] = airport_options[min(1, len(airport_options) - 1)]
-    
-    st.markdown("### Plan Your Route")
-    st.markdown("Pick airports, add travel preferences, and let the Flight Route Advisor suggest the best itinerary.")
-    
-    st.markdown('<div class="search-card">', unsafe_allow_html=True)
-    
-    popular_routes = get_popular_routes()
-    st.markdown("**Popular searches**")
-    quick_cols = st.columns(len(popular_routes[:4]))
-    for i, route in enumerate(popular_routes[:4]):
-        if quick_cols[i].button(route['label'], key=f"quick_main_{i}"):
-            if route['from'] in airport_options:
-                st.session_state['planner_source_select'] = route['from']
-            if route['to'] in airport_options:
-                st.session_state['planner_dest_select'] = route['to']
+    if not result.get('paths'):
+        st.warning("No alternative routes found for this transit setting.")
+        return
+
+    # Remove routes identical to main route (if available)
+    main_path = None
+    if 'route_result' in st.session_state and isinstance(st.session_state['route_result'], dict):
+        main_path = st.session_state['route_result'].get('path')
+    filtered = []
+    seen = set()
+    for p in result.get('paths', []):
+        path_tuple = tuple(p.get('path', []))
+        if main_path and p.get('path') == main_path:
+            continue
+        if path_tuple in seen:
+            continue
+        seen.add(path_tuple)
+        filtered.append(p)
+    result['paths'] = filtered
+    if not filtered:
+        st.warning("No alternative routes different from the main route.")
+        return
     
     st.markdown("---")
+    st.markdown("### 🔄 Alternative Routes")
     
-    col_from, col_swap, col_to = st.columns([4, 1, 4])
-    with col_from:
-        source_airport = st.selectbox(
-            "From",
-            airport_options,
-            key="planner_source_select",
-            format_func=format_func
-        )
-    with col_swap:
-        st.write("")
-        st.write("")
-        if st.button("Swap", use_container_width=True):
-            st.session_state['planner_source_select'], st.session_state['planner_dest_select'] = (
-                st.session_state['planner_dest_select'],
-                st.session_state['planner_source_select']
-            )
-            st.experimental_rerun()
-    with col_to:
-        dest_airport = st.selectbox(
-            "To",
-            airport_options,
-            key="planner_dest_select",
-            format_func=format_func
-        )
-    
-    col_obj, col_airline = st.columns([2, 3])
-    with col_obj:
-        objective_choice = st.selectbox(
-            "Primary objective",
-            ["Shortest Distance", "Fewest Transfers"],
-            key="planner_objective"
-        )
-    with col_airline:
-        airline_options = get_airline_options(routes_df)
-        preferred_airlines = st.multiselect(
-            "Preferred airlines (optional)",
-            airline_options,
-            key="planner_airlines"
-        )
-    
-    with st.expander("Advanced transit filters"):
-        country_options = get_country_options(airports_df)
-        avoid_countries = st.multiselect(
-            "Avoid transit countries",
-            country_options,
-            key="planner_avoid_countries"
-        )
-        allowed_countries = st.multiselect(
-            "Only allow transit countries",
-            country_options,
-            key="planner_allow_countries"
-        )
-    
-    col_button, col_hint = st.columns([1, 2])
-    with col_button:
-        if st.button("Search flights", type="primary", use_container_width=True):
-            if source_airport == dest_airport:
-                st.warning("Please choose two different airports.")
-            else:
-                with st.spinner("Calculating best route..."):
-                    preferences = {
-                        "avoid_countries": avoid_countries,
-                        "allowed_countries": allowed_countries,
-                        "preferred_airlines": preferred_airlines
-                    }
-                    optimization_key = "distance" if objective_choice == "Shortest Distance" else "transfers"
-                    result = analyzer.find_optimized_route(
-                        source_airport,
-                        dest_airport,
-                        objective=optimization_key,
-                        preferences=preferences
-                    )
-                    st.session_state['route_result'] = result
-    with col_hint:
-        st.markdown(
-            """
-            <div class="info-note">
-            Tip: combine airline and country filters to emulate alliance-only routes or avoid specific regions.
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    if 'route_result' in st.session_state:
-        display_shortest_path_result(st.session_state['route_result'], analyzer)
-    else:
-        st.markdown(
-            """
-            <div class="info-note">
-            Ready when you are—select departure and arrival airports, tweak your preferences, and click **Search flights**.
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    for i, path_info in enumerate(result['paths'][:3], 1):
+        with st.expander(f"Option {i}: {' → '.join(path_info['path'])} ({path_info['stops']} stops, {path_info['distance_km']:,.0f} km)", expanded=(i == 1)):
+            st.markdown(f"**Distance:** {path_info['distance_km']:,.0f} km | **Stops:** {path_info['stops']}")
+            if path_info.get('transfer_hubs'):
+                st.markdown(f"**Transfer Hubs:** {', '.join(path_info['transfer_hubs'])}")
+            
+            # Map
+            path_coordinates = analyzer.get_airport_coordinates(path_info['path'])
+            if path_coordinates:
+                route_coords = [(lat, lon) for lat, lon, _ in path_coordinates]
+                m = create_route_map(path_coordinates, route_coords)
+                if m:
+                    st_folium(m, width=900, height=450, key=f"alt_map_{i}")
 
 
-def render_hub_analysis_tab(analyzer: FlightGraphAnalyzer):
-    st.markdown("### Hub Explorer")
-    st.markdown("Discover the busiest airports globally or filter down to a specific country.")
-    
-    countries = get_country_options(analyzer.airports_df)
-    countries.insert(0, "Global")
-    
-    col_country, col_top = st.columns([3, 1])
-    with col_country:
-        selected_country = st.selectbox("Country", countries, key="hub_country_select")
-    with col_top:
-        top_n = st.slider("Top hubs", 5, 20, 10, key="hub_top_slider")
-    
-    if st.button("Analyze hubs", key="hub_analyze_action"):
-        with st.spinner("Running hub analysis..."):
-            country_filter = None if selected_country == "Global" else selected_country
-            result = analyzer.analyze_hubs(country_filter, top_n)
-            st.session_state['hub_result'] = result
-    
-    if 'hub_result' in st.session_state:
-        display_hub_analysis_result(st.session_state['hub_result'])
-
-
-def render_hub_removal_tab(analyzer: FlightGraphAnalyzer):
-    st.markdown("### Hub Removal Simulator")
-    st.markdown("Choose a hub to remove and inspect how the global network reacts.")
-    
-    hub_options = analyzer.airports_df[analyzer.airports_df['iata'].notna()]['iata'].sort_values().tolist()
-    if not hub_options:
-        st.warning("No hubs available.")
+def display_alternative_hubs(result: Dict[str, Any], analyzer: FlightGraphAnalyzer):
+    """Display alternative transfer hubs"""
+    if "error" in result or not result.get('alternative_hubs'):
         return
     
-    selected_hub = st.selectbox("Hub to remove", hub_options, key="removal_hub_select")
+    st.markdown("---")
+    st.markdown("### 🌟 Alternative Transfer Hubs")
     
-    if st.button("Analyze impact", key="hub_removal_action"):
-        with st.spinner("Simulating removal..."):
-            result = analyzer.hub_removal_analysis(selected_hub)
-            st.session_state['removal_result'] = result
+    # Table
+    hubs_data = []
+    for hub in result['alternative_hubs'][:5]:
+        hubs_data.append({
+            "Hub": hub['hub'],
+            "Name": hub['name'],
+            "Route": hub['path'],
+            "Distance": f"{hub['total_distance_km']:,.0f} km",
+            "Efficiency": f"{hub['efficiency_percent']:.1f}%"
+        })
     
-    if 'removal_result' in st.session_state:
-        display_hub_removal_result(st.session_state['removal_result'])
-
-
-def render_network_overview_tab(analyzer: FlightGraphAnalyzer):
-    st.markdown("### Network Overview")
-    display_network_stats(analyzer)
-    
-    st.markdown("### Global Top Hubs")
-    if st.button("Refresh global hub ranking", key="global_hub_refresh"):
-        with st.spinner("Fetching global rankings..."):
-            result = analyzer.analyze_hubs(None, 20)
-            st.session_state['global_hub_result'] = result
-    
-    if 'global_hub_result' in st.session_state:
-        display_hub_analysis_result(st.session_state['global_hub_result'])
-
-
-def display_hub_analysis_result(result: Dict[str, Any]):
-    """Display hub analysis results"""
-    if "error" in result:
-        st.error(result['error'])
-        return
-    
-    st.markdown(f"### Hub Analysis - {result['country']}")
-    
-    # Summary metrics
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.metric("Total Airports", result['total_airports'])
-    
-    with col2:
-        st.metric("Top Hubs Shown", len(result['top_hubs']))
-    
-    # Top hubs
-    st.markdown("### Top Hubs")
-    
-    for i, hub in enumerate(result['top_hubs'], 1):
-        with st.container():
-            st.markdown(f"""
-            <div class="hub-card">
-                <h4>#{i} {hub['airport']} - {hub['name']}</h4>
-                <p><strong>Location:</strong> {hub['city']}, {hub['country']}</p>
-                <p><strong>Degree Centrality:</strong> {hub['degree_centrality']:.4f}</p>
-                <p><strong>Betweenness Centrality:</strong> {hub['betweenness_centrality']:.4f}</p>
-                <p><strong>PageRank:</strong> {hub['pagerank']:.4f}</p>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    # Backup hubs
-    if result['backup_hubs']:
-        st.markdown("### Backup Hubs")
-        
-        backup_data = []
-        for hub in result['backup_hubs']:
-            backup_data.append({
-                "Airport": hub['airport'],
-                "Name": hub['name'],
-                "City": hub['city'],
-                "Country": hub['country'],
-                "Degree Centrality": f"{hub['degree_centrality']:.4f}",
-                "PageRank": f"{hub['pagerank']:.4f}"
-            })
-        
-        backup_df = pd.DataFrame(backup_data)
-        st.dataframe(backup_df, use_container_width=True)
-
-
-def display_hub_removal_result(result: Dict[str, Any]):
-    """Display hub removal analysis results"""
-    if "error" in result:
-        st.error(result['error'])
-        return
-    
-    st.markdown(f"### Hub Removal Analysis - {result['hub_removed']}")
-    
-    # Hub info
-    hub_info = result['hub_info']
-    if hub_info:
-        st.markdown(f"**Hub:** {hub_info['name']} ({hub_info['city']}, {hub_info['country']})")
-    
-    # Impact severity
-    severity = result['severity']
-    st.markdown(f"**Impact Severity:** {severity}")
-    
-    # Impact metrics
-    st.markdown("### Impact Metrics")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Nodes Lost", result['impact_metrics']['nodes_lost'])
-    
-    with col2:
-        st.metric("Edges Lost", result['impact_metrics']['edges_lost'])
-    
-    with col3:
-        st.metric("Density Change", f"{result['impact_metrics']['density_change']:.4f}")
-    
-    with col4:
-        st.metric("Components Increase", result['impact_metrics']['components_increase'])
-    
-    # Network comparison
-    st.markdown("### Network Comparison")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Before Removal:**")
-        original = result['original_stats']
-        st.write(f"- Nodes: {original['total_nodes']:,}")
-        st.write(f"- Edges: {original['total_edges']:,}")
-        st.write(f"- Density: {original['density']:.4f}")
-        st.write(f"- Strongly Connected: {'Yes' if original['is_strongly_connected'] else 'No'}")
-    
-    with col2:
-        st.markdown("**After Removal:**")
-        remaining = result['remaining_stats']
-        st.write(f"- Nodes: {remaining['total_nodes']:,}")
-        st.write(f"- Edges: {remaining['total_edges']:,}")
-        st.write(f"- Density: {remaining['density']:.4f}")
-        st.write(f"- Strongly Connected: {'Yes' if remaining['is_strongly_connected'] else 'No'}")
-    
-    # Affected routes
-    st.markdown("### Affected Routes")
-    st.write(f"**Total Routes Affected:** {result['affected_routes_count']}")
-    
-    if result['affected_routes']:
-        st.markdown("**Sample Affected Routes:**")
-        routes_data = []
-        for route in result['affected_routes']:
-            routes_data.append({
-                "From": route['from'],
-                "To": route['to'],
-                "Distance (km)": f"{route['distance_km']:,.0f}"
-            })
-        
-        routes_df = pd.DataFrame(routes_data)
-        st.dataframe(routes_df, use_container_width=True)
-    
-    # Alternative paths
-    if result['alternative_paths']:
-        st.markdown("### Alternative Paths")
-        
-        alt_data = []
-        for alt in result['alternative_paths']:
-            if alt['alternative_path'] != "NO_ALTERNATIVE":
-                alt_data.append({
-                    "Original Route": f"{alt['original_from']} -> {alt['original_to']}",
-                    "Alternative Path": " -> ".join(alt['alternative_path']),
-                    "Distance (km)": f"{alt['alternative_distance']:,.0f}",
-                    "Stops": alt['path_length']
-                })
-            else:
-                alt_data.append({
-                    "Original Route": f"{alt['original_from']} -> {alt['original_to']}",
-                    "Alternative Path": "NO ALTERNATIVE",
-                    "Distance (km)": "Infinity",
-                    "Stops": "N/A"
-                })
-        
-        alt_df = pd.DataFrame(alt_data)
-        st.dataframe(alt_df, use_container_width=True)
-
-
-def display_network_stats(analyzer: FlightGraphAnalyzer):
-    """Display network statistics"""
-    stats = analyzer.get_network_stats()
-    
-    st.markdown("### Network Statistics")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Total Airports", f"{stats['total_nodes']:,}")
-    
-    with col2:
-        st.metric("Total Routes", f"{stats['total_edges']:,}")
-    
-    with col3:
-        st.metric("Network Density", f"{stats['density']:.4f}")
-    
-    # Connectivity info
-    st.markdown("#### Connectivity")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.metric("Strongly Connected", "Yes" if stats['is_strongly_connected'] else "No")
-        st.metric("Strong Components", stats['number_of_strongly_connected_components'])
-    
-    with col2:
-        st.metric("Weakly Connected", "Yes" if stats['is_weakly_connected'] else "No")
-        st.metric("Weak Components", stats['number_of_weakly_connected_components'])
+    st.dataframe(pd.DataFrame(hubs_data), use_container_width=True)
 
 
 def main():
-    """Main Streamlit application"""
+    """Main Streamlit application - Google Flights style"""
     
     st.markdown('<h1 class="main-header">Flight Route Advisor</h1>', unsafe_allow_html=True)
-    st.markdown("---")
     
-    with st.spinner("Loading flight data..."):
+    # Load data
+    with st.spinner("Loading flight network..."):
         analyzer = load_data()
     
     if analyzer is None:
-        st.error("Failed to load data. Please check if the cleaned data files exist in 'data/cleaned/' directory.")
+        st.error("Failed to load data. Please run notebook/flight_route.ipynb first.")
         return
     
-    stats = analyzer.get_network_stats()
-    hero_html = f"""
-    <div class="hero-card">
-        <h2>Plan smarter routes, faster</h2>
-        <p>Search the global network, optimize layovers, and simulate disruptions—just like Google Flights for resilience planning.</p>
-        <div class="hero-metrics">
-            <div class="metric-chip">
-                <span>{stats.get('total_nodes', 0):,}</span>
-                <small>Airports</small>
-            </div>
-            <div class="metric-chip">
-                <span>{stats.get('total_edges', 0):,}</span>
-                <small>Routes</small>
-            </div>
-            <div class="metric-chip">
-                <span>{stats.get('density', 0):.4f}</span>
-                <small>Network density</small>
-            </div>
-        </div>
-    </div>
-    """
-    st.markdown(hero_html, unsafe_allow_html=True)
+    # Search Container - Google Flights style
+    st.markdown('<div class="search-container">', unsafe_allow_html=True)
     
-    tab_route, tab_hub, tab_removal, tab_overview = st.tabs([
-        "Plan Route",
-        "Hub Explorer",
-        "Hub Removal What-If",
-        "Network Overview"
-    ])
-    
-    with tab_route:
-        render_route_planner(analyzer)
-    
-    with tab_hub:
-        render_hub_analysis_tab(analyzer)
-    
-    with tab_removal:
-        render_hub_removal_tab(analyzer)
-    
-    with tab_overview:
-        render_network_overview_tab(analyzer)
+    # Popular routes
+    popular_routes = get_popular_routes()
+    st.markdown("**Quick searches:**")
+    cols = st.columns(len(popular_routes))
+    for i, route in enumerate(popular_routes):
+        if cols[i].button(route['label'], key=f"quick_{i}"):
+            st.session_state['from'] = route['from']
+            st.session_state['to'] = route['to']
+            st.session_state['max_stops'] = route.get('max_stops', 2)
     
     st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; color: #666;'>
-        <p>Flight Route Advisor - Powered by NetworkX & Streamlit</p>
-        <p>Data Source: OpenFlights Dataset</p>
-    </div>
-    """, unsafe_allow_html=True)
+    
+    # Airport selection
+    airports_df = analyzer.airports_df
+    airport_df = airports_df[airports_df['iata'].notna()].copy().sort_values(by='iata')
+    airport_options = airport_df['iata'].tolist()
+    airport_labels = get_airport_display_map(airports_df)
+    
+    col1, col3 = st.columns([3, 3])
+    with col1:
+        from_airport = st.selectbox(
+            "From",
+            airport_options,
+            key='from',
+            format_func=lambda x: airport_labels.get(x, x)
+        )
+    with col3:
+        to_airport = st.selectbox(
+            "To",
+            airport_options,
+            key='to',
+            format_func=lambda x: airport_labels.get(x, x)
+        )
+    
+    # Transit constraint + optional heavy computation
+    col_opt1, col_opt2, col_opt3 = st.columns(3)
+    with col_opt1:
+        max_stops = st.selectbox(
+            "Max stops (transits)",
+            options=[0, 1, 2],
+            index=[0, 1, 2].index(st.session_state.get('max_stops', 2)),
+            help="Limit number of transit points (commercial itineraries usually ≤2)"
+        )
+    with col_opt2:
+        compute_alt_routes = st.checkbox(
+            "Compute alternative routes",
+            value=True,
+            help="Turn off for faster search"
+        )
+    with col_opt3:
+        compute_alt_hubs = st.checkbox(
+            "Compute alternative transfer hubs (slower)",
+            value=False,
+            help="Turn on to see hub suggestions; may be slower"
+        )
+    
+    # Search button
+    if st.button("🔍 Search Flights", type="primary", use_container_width=True):
+        if from_airport == to_airport:
+            st.warning("Please select different airports")
+        else:
+            with st.spinner("Finding best route..."):
+                # Main route (respect requested max_stops)
+                main_result = analyzer.find_optimized_route(from_airport, to_airport, objective="distance", max_stops=max_stops)
+                if ("error" in main_result) or (main_result.get("stops") != max_stops):
+                    main_result = {"error": f"No route found with exactly {max_stops} transit(s)"}
+
+                # Alternative paths: optional to speed up
+                if compute_alt_routes:
+                    alt_paths_raw = analyzer.find_robust_transfer_paths(from_airport, to_airport, k=3, max_stops=None)
+                    alt_list = alt_paths_raw.get("paths", []) if isinstance(alt_paths_raw, dict) else []
+                    main_path = main_result.get("path") if isinstance(main_result, dict) else None
+                    alt_filtered = []
+                    seen = set()
+                    for p in alt_list:
+                        path_tuple = tuple(p.get("path", []))
+                        if main_path and p.get("path") == main_path:
+                            continue
+                        if path_tuple in seen:
+                            continue
+                        seen.add(path_tuple)
+                        alt_filtered.append(p)
+                    alt_paths = {
+                        "paths": alt_filtered,
+                        "total_paths_found": len(alt_filtered)
+                    }
+                    if not alt_filtered:
+                        alt_paths = {"error": "No alternative routes available."}
+                else:
+                    alt_paths = {"error": "Alternative routes not computed (fast mode)."}
+
+                st.session_state['route_result'] = main_result
+                st.session_state['alt_paths'] = alt_paths
+                
+                # Alternative hubs (optional to save time)
+                if compute_alt_hubs:
+                    alt_hubs = analyzer.suggest_alternative_transfer_hubs(from_airport, to_airport, top_n=5)
+                    st.session_state['alt_hubs'] = alt_hubs
+                else:
+                    st.session_state.pop('alt_hubs', None)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Display results
+    if 'route_result' in st.session_state:
+        display_route_result(st.session_state['route_result'], analyzer)
+        
+        if 'alt_paths' in st.session_state:
+            display_alternative_paths(st.session_state['alt_paths'], analyzer)
+        
+        if 'alt_hubs' in st.session_state:
+            display_alternative_hubs(st.session_state['alt_hubs'], analyzer)
+    
+    # Additional tabs for other features
+    st.markdown("---")
+    tab1, tab2, tab3 = st.tabs(["Hub Analysis", "Hub Removal What-If", "Network Stats"])
+    
+    with tab1:
+        st.markdown("### Hub Explorer")
+        country_options = ["Global"] + sorted(airports_df['country'].dropna().unique().tolist())
+        selected_country = st.selectbox("Country", country_options)
+        top_n = st.slider("Top N hubs", 5, 20, 10)
+        
+        if st.button("Analyze Hubs"):
+            with st.spinner("Analyzing hubs..."):
+                country_filter = None if selected_country == "Global" else selected_country
+                result = analyzer.analyze_hubs(country_filter, top_n)
+                st.session_state['hub_result'] = result
+        
+        if 'hub_result' in st.session_state:
+            result = st.session_state['hub_result']
+            if "error" not in result:
+                st.markdown(f"**Top {len(result['top_hubs'])} Hubs:**")
+                for i, hub in enumerate(result['top_hubs'], 1):
+                    st.markdown(f"{i}. **{hub['airport']}** - {hub['name']} ({hub['city']}, {hub['country']})")
+                    st.caption(f"Degree: {hub['degree_centrality']:.4f} | Betweenness: {hub['betweenness_centrality']:.4f}")
+    
+    with tab2:
+        st.markdown("### Hub Removal What-If Analysis")
+        hub_options = sorted(airport_options)
+        selected_hub = st.selectbox("Hub to remove", hub_options)
+        
+        if st.button("Analyze Impact"):
+            with st.spinner("Simulating removal..."):
+                result = analyzer.hub_removal_analysis(selected_hub)
+                st.session_state['removal_result'] = result
+        
+        if 'removal_result' in st.session_state:
+            result = st.session_state['removal_result']
+            if "error" not in result:
+                st.markdown(f"**Impact Severity:** {result['severity']}")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Routes Affected", result['affected_routes_count'])
+                with col2:
+                    st.metric("Edges Lost", result['impact_metrics']['edges_lost'])
+                with col3:
+                    st.metric("Components Increase", result['impact_metrics']['components_increase'])
+    
+    with tab3:
+        st.markdown("### Network Statistics")
+        stats = analyzer.get_network_stats()
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Airports", f"{stats['total_nodes']:,}")
+        with col2:
+            st.metric("Routes", f"{stats['total_edges']:,}")
+        with col3:
+            st.metric("Density", f"{stats['density']:.4f}")
 
 
 if __name__ == "__main__":
