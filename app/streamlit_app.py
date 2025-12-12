@@ -170,17 +170,51 @@ def display_route_result(result: Dict[str, Any], analyzer: FlightGraphAnalyzer):
     st.markdown("### ✈️ Route Found")
     
     # Main route card
-    col1, col2 = st.columns([3, 1])
+    col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
         st.markdown(f"**{' → '.join(result['path'])}**")
-        st.caption(f"{result['stops']} stop(s) • {result['total_distance_km']:,.0f} km")
+        caption_text = f"{result['stops']} stop(s) • {result['total_distance_km']:,.0f} km"
+        if result.get('total_route_time_hours'):
+            total_hours = int(result['total_route_time_hours'])
+            total_mins = int((result['total_route_time_hours'] - total_hours) * 60)
+            caption_text += f" • {total_hours}h {total_mins}m"
+        st.caption(caption_text)
     with col2:
         st.metric("Distance", f"{result['total_distance_km']:,.0f} km")
+    with col3:
+        if result.get('total_route_time_hours'):
+            total_hours = int(result['total_route_time_hours'])
+            total_mins = int((result['total_route_time_hours'] - total_hours) * 60)
+            st.metric("Total Time", f"{total_hours}h {total_mins}m")
     
     # Route details
     with st.expander("Route Details", expanded=True):
+        leg_times = result.get('leg_times', [])
+        transit_times = result.get('transit_times', [])
+        
         for i, leg in enumerate(result['legs'], 1):
-            st.markdown(f"**Leg {i}:** {leg['from']} → {leg['to']} ({leg['distance_km']:,.0f} km)")
+            leg_info = f"**Leg {i}:** {leg['from']} → {leg['to']} ({leg['distance_km']:,.0f} km"
+            if i <= len(leg_times):
+                leg_hours = int(leg_times[i-1])
+                leg_mins = int((leg_times[i-1] - leg_hours) * 60)
+                leg_info += f", {leg_hours}h {leg_mins}m"
+            leg_info += ")"
+            st.markdown(leg_info)
+            
+            # Show transit time after each leg (except last)
+            if i < len(result['legs']) and i <= len(transit_times):
+                transit_hours = int(transit_times[i-1])
+                transit_mins = int((transit_times[i-1] - transit_hours) * 60)
+                st.markdown(f"  ⏱️ Transit at {leg['to']}: {transit_hours}h {transit_mins}m")
+        
+        # Summary
+        if result.get('total_flight_time_hours') and result.get('total_transit_time_hours'):
+            flight_hours = int(result['total_flight_time_hours'])
+            flight_mins = int((result['total_flight_time_hours'] - flight_hours) * 60)
+            transit_hours = int(result['total_transit_time_hours'])
+            transit_mins = int((result['total_transit_time_hours'] - transit_hours) * 60)
+            st.markdown("---")
+            st.markdown(f"**Flight Time:** {flight_hours}h {flight_mins}m | **Transit Time:** {transit_hours}h {transit_mins}m")
     
     # Map
     path_coordinates = analyzer.get_airport_coordinates(result['path'])
@@ -223,10 +257,37 @@ def display_alternative_paths(result: Dict[str, Any], analyzer: FlightGraphAnaly
     st.markdown("### 🔄 Alternative Routes")
     
     for i, path_info in enumerate(result['paths'][:3], 1):
-        with st.expander(f"Option {i}: {' → '.join(path_info['path'])} ({path_info['stops']} stops, {path_info['distance_km']:,.0f} km)", expanded=(i == 1)):
-            st.markdown(f"**Distance:** {path_info['distance_km']:,.0f} km | **Stops:** {path_info['stops']}")
+        # Build title with time info
+        title = f"Option {i}: {' → '.join(path_info['path'])} ({path_info['stops']} stops, {path_info['distance_km']:,.0f} km"
+        if path_info.get('total_route_time_hours'):
+            total_hours = int(path_info['total_route_time_hours'])
+            total_mins = int((path_info['total_route_time_hours'] - total_hours) * 60)
+            title += f", {total_hours}h {total_mins}m"
+        title += ")"
+        
+        with st.expander(title, expanded=(i == 1)):
+            info_text = f"**Distance:** {path_info['distance_km']:,.0f} km | **Stops:** {path_info['stops']}"
+            if path_info.get('total_route_time_hours'):
+                total_hours = int(path_info['total_route_time_hours'])
+                total_mins = int((path_info['total_route_time_hours'] - total_hours) * 60)
+                info_text += f" | **Total Time:** {total_hours}h {total_mins}m"
+            st.markdown(info_text)
+            
             if path_info.get('transfer_hubs'):
                 st.markdown(f"**Transfer Hubs:** {', '.join(path_info['transfer_hubs'])}")
+            
+            # Show leg times if available
+            if path_info.get('leg_times') and path_info.get('transit_times'):
+                st.markdown("**Timeline:**")
+                leg_times = path_info['leg_times']
+                transit_times = path_info['transit_times']
+                # Note: We don't have individual leg details here, so we show summary
+                if path_info.get('total_flight_time_hours') and path_info.get('total_transit_time_hours'):
+                    flight_hours = int(path_info['total_flight_time_hours'])
+                    flight_mins = int((path_info['total_flight_time_hours'] - flight_hours) * 60)
+                    transit_hours = int(path_info['total_transit_time_hours'])
+                    transit_mins = int((path_info['total_transit_time_hours'] - transit_hours) * 60)
+                    st.markdown(f"  Flight: {flight_hours}h {flight_mins}m | Transit: {transit_hours}h {transit_mins}m")
             
             # Map
             path_coordinates = analyzer.get_airport_coordinates(path_info['path'])
@@ -248,13 +309,21 @@ def display_alternative_hubs(result: Dict[str, Any], analyzer: FlightGraphAnalyz
     # Table
     hubs_data = []
     for hub in result['alternative_hubs'][:5]:
-        hubs_data.append({
+        row = {
             "Hub": hub['hub'],
             "Name": hub['name'],
             "Route": hub['path'],
             "Distance": f"{hub['total_distance_km']:,.0f} km",
             "Efficiency": f"{hub['efficiency_percent']:.1f}%"
-        })
+        }
+        
+        # Add time if available
+        if hub.get('total_route_time_hours'):
+            total_hours = int(hub['total_route_time_hours'])
+            total_mins = int((hub['total_route_time_hours'] - total_hours) * 60)
+            row["Total Time"] = f"{total_hours}h {total_mins}m"
+        
+        hubs_data.append(row)
     
     st.dataframe(pd.DataFrame(hubs_data), use_container_width=True)
 

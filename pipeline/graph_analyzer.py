@@ -7,6 +7,7 @@ import networkx as nx
 import pandas as pd
 from typing import Dict, List, Tuple, Optional, Any
 import json
+from .flight_time import compute_total_route_time
 
 
 class FlightGraphAnalyzer:
@@ -169,9 +170,12 @@ class FlightGraphAnalyzer:
                     "stops": edge_data.get('stops', 0)
                 })
 
+            # Calculate flight time for the route
+            time_info = compute_total_route_time(legs, use_random_transit=True)
+            
             summary = self._build_criteria_summary(objective, preferences, len(path_nodes) - 2)
 
-            return {
+            result = {
                 "source": source_iata,
                 "destination": dest_iata,
                 "path": path_iata,
@@ -181,6 +185,18 @@ class FlightGraphAnalyzer:
                 "objective": objective,
                 "criteria_summary": summary
             }
+            
+            # Add flight time information if available
+            if time_info:
+                result.update({
+                    "total_flight_time_hours": time_info.get('total_flight_time_hours'),
+                    "total_transit_time_hours": time_info.get('total_transit_time_hours'),
+                    "total_route_time_hours": time_info.get('total_route_time_hours'),
+                    "leg_times": time_info.get('leg_times', []),
+                    "transit_times": time_info.get('transit_times', [])
+                })
+            
+            return result
 
         except nx.NetworkXNoPath:
             return {"error": "No path found with current constraints"}
@@ -694,6 +710,38 @@ class FlightGraphAnalyzer:
                         except nx.NetworkXNoPath:
                             continue
             
+            # Calculate flight time for each path
+            for path_info in alternative_paths:
+                # Build legs from path (convert IATA back to airport_ids)
+                path_iata_list = path_info['path']
+                path_nodes = []
+                for iata in path_iata_list:
+                    airport_id = self._get_airport_id_by_iata(iata)
+                    if airport_id:
+                        path_nodes.append(airport_id)
+                
+                legs = []
+                for i in range(len(path_nodes) - 1):
+                    if self.graph.has_edge(path_nodes[i], path_nodes[i+1]):
+                        edge_data = self.graph[path_nodes[i]][path_nodes[i+1]]
+                        distance = edge_data.get('distance_km', 0)
+                        if distance and distance > 0:
+                            legs.append({
+                                "distance_km": distance
+                            })
+                
+                # Calculate time for this path
+                if legs:
+                    time_info = compute_total_route_time(legs, use_random_transit=True)
+                    if time_info:
+                        path_info.update({
+                            "total_flight_time_hours": time_info.get('total_flight_time_hours'),
+                            "total_transit_time_hours": time_info.get('total_transit_time_hours'),
+                            "total_route_time_hours": time_info.get('total_route_time_hours'),
+                            "leg_times": time_info.get('leg_times', []),
+                            "transit_times": time_info.get('transit_times', [])
+                        })
+            
             # Sort by distance
             alternative_paths.sort(key=lambda x: x['distance_km'])
             
@@ -764,7 +812,33 @@ class FlightGraphAnalyzer:
                             direct_dist = float('inf')
                             efficiency = 100  # This hub provides connectivity
                         
-                        alternative_hubs.append({
+                        # Calculate flight time for route through this hub
+                        legs = []
+                        # Leg 1: source -> hub
+                        try:
+                            path1_nodes = nx.shortest_path(self.graph, source_id, hub_id, weight='weight')
+                            for i in range(len(path1_nodes) - 1):
+                                if self.graph.has_edge(path1_nodes[i], path1_nodes[i+1]):
+                                    edge_data = self.graph[path1_nodes[i]][path1_nodes[i+1]]
+                                    distance = edge_data.get('distance_km', 0)
+                                    if distance and distance > 0:
+                                        legs.append({"distance_km": distance})
+                        except nx.NetworkXNoPath:
+                            pass
+                        
+                        # Leg 2: hub -> dest
+                        try:
+                            path2_nodes = nx.shortest_path(self.graph, hub_id, dest_id, weight='weight')
+                            for i in range(len(path2_nodes) - 1):
+                                if self.graph.has_edge(path2_nodes[i], path2_nodes[i+1]):
+                                    edge_data = self.graph[path2_nodes[i]][path2_nodes[i+1]]
+                                    distance = edge_data.get('distance_km', 0)
+                                    if distance and distance > 0:
+                                        legs.append({"distance_km": distance})
+                        except nx.NetworkXNoPath:
+                            pass
+                        
+                        hub_info = {
                             "hub": hub_iata,
                             "name": hub['name'],
                             "city": hub['city'],
@@ -775,7 +849,19 @@ class FlightGraphAnalyzer:
                             "direct_distance_km": direct_dist,
                             "efficiency_percent": efficiency,
                             "path": f"{source_iata} -> {hub_iata} -> {dest_iata}"
-                        })
+                        }
+                        
+                        # Add flight time if legs available
+                        if legs:
+                            time_info = compute_total_route_time(legs, use_random_transit=True)
+                            if time_info:
+                                hub_info.update({
+                                    "total_flight_time_hours": time_info.get('total_flight_time_hours'),
+                                    "total_transit_time_hours": time_info.get('total_transit_time_hours'),
+                                    "total_route_time_hours": time_info.get('total_route_time_hours')
+                                })
+                        
+                        alternative_hubs.append(hub_info)
                 except Exception:
                     continue
         
