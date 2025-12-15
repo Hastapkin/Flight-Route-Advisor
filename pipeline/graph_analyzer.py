@@ -430,7 +430,8 @@ class FlightGraphAnalyzer:
             "country": country or "Global",
             "top_hubs": top_hubs,
             "backup_hubs": backup_hubs,
-            "total_airports": len(hubs_data)
+            "total_airports": len(hubs_data),
+            "all_hubs": hubs_data  # Include all hubs for map visualization
         }
     
     def get_network_stats(self) -> Dict[str, Any]:
