@@ -148,8 +148,12 @@ def load_all_hubs_data(_analyzer: FlightGraphAnalyzer):
 
 
 @st.cache_data
-def get_filtered_hubs(hubs_data: List[Dict[str, Any]], country: str, size_metric: str) -> List[Dict[str, Any]]:
-    """Filter and sort hubs; cached by country + size metric"""
+def get_filtered_hubs(hubs_data: List[Dict[str, Any]], country: str, size_metric: str, _cache_key: int = 0) -> List[Dict[str, Any]]:
+    """Filter and sort hubs; cached by country + size metric + cache_key
+    
+    Args:
+        _cache_key: Internal cache invalidation key (leading underscore prevents Streamlit from showing it)
+    """
     filtered = hubs_data
     if country and country != "All Countries":
         filtered = [h for h in hubs_data if h.get('country', '') == country]
@@ -452,28 +456,36 @@ def _add_hub_markers(
 
 
 def _get_hub_coordinates(hubs_data: List[Dict[str, Any]], analyzer: FlightGraphAnalyzer) -> List[Dict[str, Any]]:
-    """Extract and validate hub coordinates from hubs data"""
+    """Extract and validate hub coordinates from hubs data (batch optimized)"""
+    # Batch lookup all IATA codes at once (much faster than individual lookups)
+    iata_list = [hub.get('airport') for hub in hubs_data if hub.get('airport')]
+    if not iata_list:
+        return []
+    
+    all_coords = analyzer.get_airport_coordinates(iata_list)
+    
+    # Create lookup dict for O(1) access
+    coords_dict = {iata: (lat, lon) for lat, lon, iata in all_coords}
+    
     hub_coords = []
     for hub in hubs_data:
         try:
             iata = hub.get('airport')
-            if iata:
-                coords = analyzer.get_airport_coordinates([iata])
-                if coords and len(coords) > 0:
-                    lat, lon, _ = coords[0]
-                    # Validate coordinates
-                    if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
-                        if -90 <= lat <= 90 and -180 <= lon <= 180:
-                            hub_coords.append({
-                                'lat': float(lat),
-                                'lon': float(lon),
-                                'iata': iata,
-                                'name': hub.get('name', ''),
-                                'city': hub.get('city', ''),
-                                'country': hub.get('country', ''),
-                                'degree': float(hub.get('degree_centrality', 0)),
-                                'betweenness': float(hub.get('betweenness_centrality', 0))
-                            })
+            if iata and iata in coords_dict:
+                lat, lon = coords_dict[iata]
+                # Validate coordinates
+                if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+                    if -90 <= lat <= 90 and -180 <= lon <= 180:
+                        hub_coords.append({
+                            'lat': float(lat),
+                            'lon': float(lon),
+                            'iata': iata,
+                            'name': hub.get('name', ''),
+                            'city': hub.get('city', ''),
+                            'country': hub.get('country', ''),
+                            'degree': float(hub.get('degree_centrality', 0)),
+                            'betweenness': float(hub.get('betweenness_centrality', 0))
+                        })
         except Exception:
             # Skip invalid hubs
             continue
@@ -751,6 +763,13 @@ def _search_route(analyzer: FlightGraphAnalyzer, search_params: Dict[str, Any]) 
     max_stops = search_params['max_stops']
     compute_alt_routes = search_params['compute_alt_routes']
     
+    # Clear map filter cache to boost performance when searching routes
+    st.session_state.pop('map_applied', None)
+    st.session_state.pop('applied_size_metric', None)
+    st.session_state.pop('applied_country', None)
+    # Invalidate filtered hubs cache by changing cache key
+    st.session_state['filtered_hubs_cache_key'] = st.session_state.get('filtered_hubs_cache_key', 0) + 1
+    
     with st.spinner("Finding route..."):
         # Main route
         main_result = analyzer.find_optimized_route(
@@ -759,12 +778,10 @@ def _search_route(analyzer: FlightGraphAnalyzer, search_params: Dict[str, Any]) 
         if ("error" in main_result) or (main_result.get("stops") != max_stops):
             main_result = {"error": f"No route found with exactly {max_stops} transit(s)"}
     
-    # Alternative paths
-        if compute_alt_routes:
-            # For max_stops = 0, still allow alternative routes with stops (1-2)
-            alt_search_stops = None if max_stops == 0 else max_stops
+    # Alternative paths: always search unconstrained by transit when requested
+        if compute_alt_routes or ("error" in main_result):
             alt_paths_raw = analyzer.find_robust_transfer_paths(
-                from_airport, to_airport, k=3, max_stops=alt_search_stops
+                from_airport, to_airport, k=10, max_stops=None
             )
             alt_list = alt_paths_raw.get("paths", []) if isinstance(alt_paths_raw, dict) else []
             main_path = main_result.get("path") if isinstance(main_result, dict) else None
@@ -779,7 +796,7 @@ def _search_route(analyzer: FlightGraphAnalyzer, search_params: Dict[str, Any]) 
                 seen.add(path_tuple)
                 alt_filtered.append(p)
             alt_paths = {
-                "paths": alt_filtered[:3],
+                "paths": alt_filtered,
                 "total_paths_found": len(alt_filtered)
             }
             if not alt_filtered:
@@ -823,11 +840,15 @@ def main():
         # Map controls (separate from search but still in sidebar)
         map_ctrl = _render_map_controls(all_hubs)
         if map_ctrl.get('apply_map'):
-            st.session_state['applied_size_metric'] = map_ctrl.get('size_metric', st.session_state['applied_size_metric'])
-            st.session_state['applied_country'] = map_ctrl.get('selected_country', st.session_state['applied_country'])
-            # Clear current route results to avoid overlap when applying map filters
+            # Clear route search cache to boost performance when applying map filters
             st.session_state.pop('route_result', None)
             st.session_state.pop('alt_paths', None)
+            st.session_state.pop('alt_hubs', None)
+            # Reset cache key for filtered hubs to use fresh cache
+            st.session_state['filtered_hubs_cache_key'] = 0
+            
+            st.session_state['applied_size_metric'] = map_ctrl.get('size_metric', st.session_state.get('applied_size_metric', 'degree_centrality'))
+            st.session_state['applied_country'] = map_ctrl.get('selected_country', st.session_state.get('applied_country', 'All Countries'))
             st.session_state['map_applied'] = True
         # If no apply yet, ensure default flag
         if 'map_applied' not in st.session_state:
@@ -855,14 +876,11 @@ def main():
     is_search_rerun = st.session_state.get('route_result') is not None and sidebar_result and sidebar_result.get('search_clicked')
 
     # Filter hubs using applied settings (cached) only when applied at least once
-    # Skip hubs render on the rerun triggered by Search to speed things up
     if map_applied:
-        filtered_hubs = get_filtered_hubs(all_hubs, applied_country, size_metric)
-        if not is_search_rerun:
-            st.info(f"Showing {len(filtered_hubs)} hubs on map (Country: {applied_country}, Size metric: {size_metric})")
-            _render_main_map(analyzer, filtered_hubs, size_metric, from_airport, to_airport)
-        else:
-            st.info("Hubs map skipped during search to speed up. Re-apply map filters to view hubs.")
+        cache_key = st.session_state.get('filtered_hubs_cache_key', 0)
+        filtered_hubs = get_filtered_hubs(all_hubs, applied_country, size_metric, _cache_key=cache_key)
+        st.info(f"Showing {len(filtered_hubs)} hubs on map (Country: {applied_country}, Size metric: {size_metric})")
+        _render_main_map(analyzer, filtered_hubs, size_metric, from_airport, to_airport)
     else:
         filtered_hubs = []
         st.info("Apply map filters to load hubs map.")
@@ -941,7 +959,7 @@ def _render_route_details(analyzer: FlightGraphAnalyzer) -> None:
         if "error" not in alt_paths and alt_paths.get('paths'):
             st.markdown("---")
             st.markdown("### 🔄 Alternative Routes")
-            for i, path_info in enumerate(alt_paths['paths'][:2], 1):
+            for i, path_info in enumerate(alt_paths['paths'], 1):
                 title = f"Option {i}: {' → '.join(path_info['path'])} ({path_info['stops']} stops, {path_info['distance_km']:,.0f} km"
                 if path_info.get('total_route_time_hours'):
                     total_hours = int(path_info['total_route_time_hours'])

@@ -24,7 +24,13 @@ class FlightGraphAnalyzer:
         self.airports_df = airports_df
         self.routes_df = routes_df
         self.graph = None
+        # Cache for fast lookups
+        self._iata_to_id_cache = None
+        self._id_to_iata_cache = None
+        self._iata_to_coords_cache = None
+        self._top_hubs_cache = None
         self._build_graph()
+        self._build_caches()
     
     def _build_graph(self) -> None:
         """Build NetworkX graph from routes and airports data"""
@@ -61,6 +67,28 @@ class FlightGraphAnalyzer:
                 edge_count += 1
         
         print(f"Graph built: {self.graph.number_of_nodes()} nodes, {self.graph.number_of_edges()} edges")
+    
+    def _build_caches(self) -> None:
+        """Build lookup caches for fast access"""
+        # IATA to airport_id mapping
+        self._iata_to_id_cache = {}
+        self._id_to_iata_cache = {}
+        self._iata_to_coords_cache = {}
+        
+        for _, airport in self.airports_df.iterrows():
+            iata = airport.get('iata')
+            airport_id = airport.get('airport_id')
+            if pd.notna(iata) and pd.notna(airport_id):
+                iata_str = str(iata).upper()
+                self._iata_to_id_cache[iata_str] = int(airport_id)
+                self._id_to_iata_cache[int(airport_id)] = iata_str
+                # Cache coordinates
+                lat = float(airport.get('latitude', 0))
+                lon = float(airport.get('longitude', 0))
+                if lat != 0 or lon != 0:  # Only cache valid coordinates
+                    self._iata_to_coords_cache[iata_str] = (lat, lon)
+        
+        print(f"Caches built: {len(self._iata_to_id_cache)} airports cached")
     
     def find_shortest_path(self, source_iata: str, dest_iata: str) -> Dict[str, Any]:
         """
@@ -426,6 +454,10 @@ class FlightGraphAnalyzer:
         top_hubs = hubs_data[:top_n]
         backup_hubs = hubs_data[top_n:top_n*2] if len(hubs_data) > top_n else []
         
+        # Cache top hubs for reuse in find_robust_transfer_paths
+        if top_n <= 10 and not country:  # Only cache global top 10
+            self._top_hubs_cache = top_hubs
+        
         return {
             "country": country or "Global",
             "top_hubs": top_hubs,
@@ -678,8 +710,11 @@ class FlightGraphAnalyzer:
             
             # Method 2: Find paths through different major hubs
             if len(alternative_paths) < k:
-                top_hubs_result = self.analyze_hubs(top_n=10)
-                major_hubs = [self._get_airport_id_by_iata(hub['airport']) for hub in top_hubs_result['top_hubs'] 
+                # Use cached hubs if available, otherwise compute once
+                if self._top_hubs_cache is None:
+                    top_hubs_result = self.analyze_hubs(top_n=10)
+                    self._top_hubs_cache = top_hubs_result.get('top_hubs', [])
+                major_hubs = [self._get_airport_id_by_iata(hub['airport']) for hub in self._top_hubs_cache 
                              if hub['airport'] not in [source_iata, dest_iata]]
                 
                 for hub_id in major_hubs[:5]:  # Try top 5 hubs to reduce runtime
@@ -878,7 +913,7 @@ class FlightGraphAnalyzer:
     
     def get_airport_coordinates(self, iata_codes: List[str]) -> List[Tuple[float, float, str]]:
         """
-        Get coordinates for airports by IATA codes
+        Get coordinates for airports by IATA codes (optimized with cache)
         
         Args:
             iata_codes: List of IATA codes
@@ -888,25 +923,33 @@ class FlightGraphAnalyzer:
         """
         coordinates = []
         for iata in iata_codes:
-            airport_id = self._get_airport_id_by_iata(iata)
-            if airport_id and airport_id in self.graph.nodes():
-                node_data = self.graph.nodes[airport_id]
-                coordinates.append((
-                    node_data.get('latitude', 0),
-                    node_data.get('longitude', 0),
-                    iata
-                ))
+            iata_upper = str(iata).upper()
+            # Try cache first (fastest)
+            if iata_upper in self._iata_to_coords_cache:
+                lat, lon = self._iata_to_coords_cache[iata_upper]
+                coordinates.append((lat, lon, iata_upper))
+            else:
+                # Fallback to graph lookup
+                airport_id = self._get_airport_id_by_iata(iata)
+                if airport_id and airport_id in self.graph.nodes():
+                    node_data = self.graph.nodes[airport_id]
+                    lat = node_data.get('latitude', 0)
+                    lon = node_data.get('longitude', 0)
+                    coordinates.append((lat, lon, iata_upper))
         return coordinates
     
     def _get_airport_id_by_iata(self, iata: str) -> Optional[int]:
-        """Get airport ID by IATA code"""
-        airport = self.airports_df[self.airports_df['iata'] == iata]
-        return airport['airport_id'].iloc[0] if not airport.empty else None
+        """Get airport ID by IATA code (optimized with cache)"""
+        if self._iata_to_id_cache is None:
+            self._build_caches()
+        iata_upper = str(iata).upper()
+        return self._iata_to_id_cache.get(iata_upper)
     
     def _get_iata_by_airport_id(self, airport_id: int) -> str:
-        """Get IATA code by airport ID"""
-        airport = self.airports_df[self.airports_df['airport_id'] == airport_id]
-        return airport['iata'].iloc[0] if not airport.empty else str(airport_id)
+        """Get IATA code by airport ID (optimized with cache)"""
+        if self._id_to_iata_cache is None:
+            self._build_caches()
+        return self._id_to_iata_cache.get(airport_id, str(airport_id))
     
     def _get_airport_info(self, airport_id: int) -> Optional[Dict[str, Any]]:
         """Get airport information by ID"""
