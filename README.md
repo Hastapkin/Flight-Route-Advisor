@@ -1,4 +1,16 @@
 # Flight Route Advisor
+
+Find flight routes and study the world's airport network. The project loads the public [OpenFlights](https://openflights.org/data.html) data (7,698 airports, 66,315 routes), builds a directed graph with NetworkX, and serves the analysis through a Streamlit app with interactive maps.
+
+## What it does
+
+- **Route search**: shortest route between two airports (Dijkstra), with optional limits on the number of stops and route preferences.
+- **Hub analysis**: ranks airports worldwide or per country by degree, betweenness and PageRank.
+- **Hub removal**: simulates closing a hub and reports how connectivity changes and which alternative paths remain.
+- **Robust transfers**: suggests alternative transfer hubs for a route.
+
+A demo recording is in `DEMO.mp4`; the full report is in `FLIGHT ROUTE ADVISOR.pdf`.
+
 ## Quick Start
 
 ### 1. Set up
